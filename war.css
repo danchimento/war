@@ -345,6 +345,16 @@ html, body {
   white-space: nowrap;
 }
 
+.upgrade-badge--epic {
+  border-color: #9b59b6;
+  color: #bb8fce;
+}
+
+.upgrade-badge--combo {
+  border-color: #e67e22;
+  color: #f39c12;
+}
+
 /* ========== OVERLAYS ========== */
 .overlay {
   position: fixed;
@@ -394,12 +404,55 @@ html, body {
   transition: border-color 0.15s, transform 0.1s;
 }
 
+/* Rarity borders */
+.upgrade-card--common {
+  border-color: rgba(255,255,255,.25);
+}
+
+.upgrade-card--rare {
+  border-color: #3498db;
+  box-shadow: 0 0 10px rgba(52,152,219,.3);
+}
+
+.upgrade-card--epic {
+  border-color: #9b59b6;
+  box-shadow: 0 0 14px rgba(155,89,182,.4);
+}
+
 .upgrade-card:hover {
   border-color: var(--accent);
 }
 
+.upgrade-card--rare:hover {
+  border-color: #5dade2;
+  box-shadow: 0 0 16px rgba(52,152,219,.5);
+}
+
+.upgrade-card--epic:hover {
+  border-color: #bb8fce;
+  box-shadow: 0 0 20px rgba(155,89,182,.6);
+}
+
 .upgrade-card:active {
   transform: scale(0.97);
+}
+
+.upgrade-rarity-tag {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  margin-bottom: 4px;
+  opacity: 0.5;
+}
+
+.upgrade-card--rare .upgrade-rarity-tag {
+  color: #3498db;
+  opacity: 1;
+}
+
+.upgrade-card--epic .upgrade-rarity-tag {
+  color: #9b59b6;
+  opacity: 1;
 }
 
 .upgrade-card h3 {

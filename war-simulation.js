@@ -73,30 +73,31 @@
     return Math.sqrt(sum / arr.length);
   }
 
-  // ===== UPGRADE HELPERS (headless simulation) =====
+  // ===== UPGRADE CATALOG (rarity-based) =====
 
-  var upgradeEffects = {
-    plusOne: function (level) { return level; },
-  };
+  var RARITY_WEIGHTS = { common: 70, rare: 20, epic: 10 };
 
-  var upgradeTriggers = {
-    onWin: function (ctx) { return { p1Upgrade: ctx.winner === 1, p2Upgrade: ctx.winner === 2 }; },
-    everyNTurns: function (n) {
-      return function (ctx) { return { p1Upgrade: ctx.turns % n === 0, p2Upgrade: false }; };
-    },
-  };
-
-  var UPGRADE_CATALOG = {
-    plusOneOnWin: {
-      trigger: upgradeTriggers.onWin,
-      effect: upgradeEffects.plusOne,
-    },
-  };
-
-  function applyUpgrade(baseValue, level, effect) {
-    if (!effect || level === 0) return baseValue;
-    return baseValue + effect(level);
+  function rollRarity() {
+    var roll = Math.random() * 100;
+    if (roll < RARITY_WEIGHTS.epic) return 'epic';
+    if (roll < RARITY_WEIGHTS.epic + RARITY_WEIGHTS.rare) return 'rare';
+    return 'common';
   }
+
+  var UPGRADE_CATALOG = [
+    // Common
+    { key: 'boost3',    name: '+3 Value',      desc: '+3 to your next card',                       rarity: 'common', icon: '\u2B06' },
+    { key: 'boost5',    name: '+5 Value',      desc: '+5 to your next card',                       rarity: 'common', icon: '\u23EB' },
+    { key: 'xpUp',      name: 'XP Up',         desc: 'Permanently gain +5 XP per win',             rarity: 'common', icon: '\u2B50' },
+    { key: 'comboXpUp', name: 'Combo XP Up',   desc: 'Permanently increase combo XP bonus by +5%', rarity: 'common', icon: '\uD83D\uDD25' },
+    // Rare
+    { key: 'stealCard', name: 'Steal Card',    desc: 'Steal a random card from the opponent',      rarity: 'rare',   icon: '\uD83E\uDD1A' },
+    { key: 'permBoost', name: 'Empower Card',  desc: 'Permanently give +1 value to a random card', rarity: 'rare',   icon: '\uD83D\uDC8E' },
+    { key: 'critXpUp',  name: 'Crit XP Up',    desc: 'Permanently increase War XP bonus by +25%',  rarity: 'rare',   icon: '\u26A1' },
+    // Epic
+    { key: 'autoWinWar',  name: 'Auto-Win War',  desc: 'Automatically win the next war',           rarity: 'epic',   icon: '\uD83D\uDC51' },
+    { key: 'moreChoices', name: 'More Choices',   desc: 'Permanently get +1 upgrade choice',       rarity: 'epic',   icon: '\uD83C\uDFB0' },
+  ];
 
   // ===== HEADLESS SIMULATION =====
 
@@ -142,14 +143,11 @@
 
     var shufflePot = options.shufflePot !== undefined ? options.shufflePot : true;
     var maxTurns = options.maxTurns || 10000;
-    var upgrade = options.upgrade || null;
-
     var turns = 0, wars = 0, doubleWars = 0, tripleWars = 0;
     var p1HandWins = 0, p2HandWins = 0;
     var warEndedGame = false;
     var p1MaxStreak = 0, p2MaxStreak = 0, p1CurStreak = 0, p2CurStreak = 0;
     var p1MaxLead = 0, p2MaxLead = 0, leadChanges = 0, lastLeader = 0;
-    var p1UpgradeLevel = 0, p2UpgradeLevel = 0, p1TotalUpgrades = 0;
 
     while (p1Hand.length > 0 && p2Hand.length > 0 && turns < maxTurns) {
       turns++;
@@ -158,10 +156,7 @@
       var p2Card = p2Hand.shift();
       var pot = [{ card: p1Card, owner: 1 }, { card: p2Card, owner: 2 }];
 
-      var p1Eff = upgrade ? applyUpgrade(p1Card, p1UpgradeLevel, upgrade.effect) : p1Card;
-      var p2Eff = upgrade ? applyUpgrade(p2Card, p2UpgradeLevel, upgrade.effect) : p2Card;
-
-      var result = p1Eff > p2Eff ? 1 : p2Eff > p1Eff ? 2 : 0;
+      var result = p1Card > p2Card ? 1 : p2Card > p1Card ? 2 : 0;
       var warCount = 0;
 
       while (result === 0) {
@@ -194,9 +189,7 @@
         pot.push({ card: p1Reveal, owner: 1 });
         pot.push({ card: p2Reveal, owner: 2 });
 
-        var p1RevEff = upgrade ? applyUpgrade(p1Reveal, p1UpgradeLevel, upgrade.effect) : p1Reveal;
-        var p2RevEff = upgrade ? applyUpgrade(p2Reveal, p2UpgradeLevel, upgrade.effect) : p2Reveal;
-        result = p1RevEff > p2RevEff ? 1 : p2RevEff > p1RevEff ? 2 : 0;
+        result = p1Reveal > p2Reveal ? 1 : p2Reveal > p1Reveal ? 2 : 0;
       }
 
       // Collect pot to winner (unless war ended the game — cards already moved)
@@ -223,12 +216,6 @@
       if (leader !== 0 && lastLeader !== 0 && leader !== lastLeader) leadChanges++;
       if (leader !== 0) lastLeader = leader;
 
-      // Upgrade trigger
-      if (upgrade && upgrade.trigger && !warEndedGame) {
-        var t = upgrade.trigger({ winner: result, turns: turns });
-        if (t.p1Upgrade) { p1UpgradeLevel++; p1TotalUpgrades++; }
-        if (t.p2Upgrade) { p2UpgradeLevel++; }
-      }
     }
 
     return {
@@ -248,22 +235,8 @@
       p1MaxLead: p1MaxLead,
       p2MaxLead: p2MaxLead,
       leadChanges: leadChanges,
-      p1UpgradeLevel: p1UpgradeLevel,
-      p2UpgradeLevel: p2UpgradeLevel,
-      p1TotalUpgrades: p1TotalUpgrades,
     };
   }
-
-  // ===== NAMED UPGRADES (for interactive / UI-driven games) =====
-
-  var NAMED_UPGRADES = {
-    boost:      { name: '+2 Boost',     desc: 'Add +2 to your card value',                  duration: 3, durationType: 'rounds', icon: '\u2B06' },
-    sabotage:   { name: '-2 Sabotage',  desc: "Subtract 2 from opponent's card value",       duration: 3, durationType: 'rounds', icon: '\u2B07' },
-    doubleDown: { name: 'Double Down',  desc: 'Next war win, take 2 extra opponent cards',   duration: 1, durationType: 'war',    icon: '\u2694' },
-    shield:     { name: 'Shield',       desc: 'Next round you lose, keep your card',         duration: 1, durationType: 'use',    icon: '\uD83D\uDEE1' },
-    aceCrusher: { name: 'Ace Crusher',  desc: 'Your card beats Aces regardless',             duration: 2, durationType: 'rounds', icon: '\uD83D\uDC80' },
-    rally:      { name: 'Rally',        desc: 'If behind (fewer cards), +3 to your value',   duration: 3, durationType: 'rounds', icon: '\uD83D\uDCE3' },
-  };
 
   // ===== INTERACTIVE GAME ENGINE =====
 
@@ -276,10 +249,19 @@
     this.p1Hand = [];
     this.p2Hand = [];
     this.pot = [];
-    this.activeUpgrades = [];
+
+    // XP system
     this.xp = 0;
     this.xpPerWin = 20;
     this.xpToLevel = 100;
+    this.criticalXpPercent = 150;
+    this.comboXpPercent = 10;
+    this.combo = 0;
+
+    // Upgrade system
+    this.numUpgradeChoices = 3;
+    this.nextCardBoost = 0;
+    this.autoWinWar = false;
   }
 
   WarGameEngine.prototype.setup = function () {
@@ -288,8 +270,16 @@
     this.p1Hand = deck.slice(0, 26);
     this.p2Hand = deck.slice(26);
     this.pot = [];
-    this.activeUpgrades = [];
+
     this.xp = 0;
+    this.xpPerWin = 20;
+    this.criticalXpPercent = 150;
+    this.comboXpPercent = 10;
+    this.combo = 0;
+
+    this.numUpgradeChoices = 3;
+    this.nextCardBoost = 0;
+    this.autoWinWar = false;
   };
 
   WarGameEngine.prototype.getP1Count = function () { return this.p1Hand.length; };
@@ -316,34 +306,36 @@
     return card;
   };
 
+  // --- XP helpers ---
+
+  /** Calculate XP for a win. isWar = true applies critical multiplier. */
+  WarGameEngine.prototype.calcXP = function (isWar) {
+    var base = this.xpPerWin;
+    var comboMultiplier = 1 + (this.combo * this.comboXpPercent / 100);
+    var xp = base * comboMultiplier;
+    if (isWar) {
+      xp = xp * (this.criticalXpPercent / 100);
+    }
+    return Math.floor(xp);
+  };
+
   /**
-   * Compare two cards with active upgrade modifiers applied.
-   * Returns { winner: 'player'|'opponent'|'tie', playerEffective, opponentEffective }
+   * Compare two cards with temporary boost applied.
+   * Returns { winner: 'player'|'opponent'|'tie', playerEffective, opponentEffective, boosted }
    */
   WarGameEngine.prototype.evaluate = function (playerCard, opponentCard) {
     var pv = playerCard.value;
     var ov = opponentCard.value;
-    var aceCrusherActive = false;
-    var playerBehind = this.p1Hand.length < this.p2Hand.length;
+    var boosted = false;
 
-    for (var i = 0; i < this.activeUpgrades.length; i++) {
-      var u = this.activeUpgrades[i];
-      switch (u.key) {
-        case 'boost': pv += 2; break;
-        case 'sabotage': ov -= 2; break;
-        case 'aceCrusher':
-          if (opponentCard.value === 14) aceCrusherActive = true;
-          break;
-        case 'rally':
-          if (playerBehind) pv += 3;
-          break;
-      }
+    if (this.nextCardBoost > 0) {
+      pv += this.nextCardBoost;
+      this.nextCardBoost = 0;
+      boosted = true;
     }
 
     var winner;
-    if (aceCrusherActive && opponentCard.value === 14) {
-      winner = 'player';
-    } else if (pv > ov) {
+    if (pv > ov) {
       winner = 'player';
     } else if (ov > pv) {
       winner = 'opponent';
@@ -351,7 +343,7 @@
       winner = 'tie';
     }
 
-    return { winner: winner, playerEffective: pv, opponentEffective: ov };
+    return { winner: winner, playerEffective: pv, opponentEffective: ov, boosted: boosted };
   };
 
   /** Can both sides afford a war? (need 4 cards each: 3 face-down + 1 reveal) */
@@ -430,16 +422,6 @@
     this.pot = [];
   };
 
-  /** Shield: each side gets their own cards back from the pot. */
-  WarGameEngine.prototype.collectShielded = function () {
-    for (var i = 0; i < this.pot.length; i++) {
-      var entry = this.pot[i];
-      if (entry.owner === 'player') this.p1Hand.push(entry.card);
-      else this.p2Hand.push(entry.card);
-    }
-    this.pot = [];
-  };
-
   // --- XP & Upgrade management ---
 
   /** Add XP. Returns true if leveled up (XP resets). */
@@ -456,79 +438,91 @@
     return { current: this.xp, needed: this.xpToLevel, percentage: (this.xp / this.xpToLevel) * 100 };
   };
 
-  /** Get n random upgrade choices from the catalog. */
-  WarGameEngine.prototype.getUpgradeChoices = function (n) {
-    n = n || 3;
-    var keys = shuffle(Object.keys(NAMED_UPGRADES).slice());
+  /** Get upgrade choices, each independently rolling for rarity. */
+  WarGameEngine.prototype.getUpgradeChoices = function () {
+    var n = this.numUpgradeChoices;
     var choices = [];
-    for (var i = 0; i < Math.min(n, keys.length); i++) {
-      var k = keys[i];
-      var def = NAMED_UPGRADES[k];
-      choices.push({ key: k, name: def.name, desc: def.desc, duration: def.duration, durationType: def.durationType, icon: def.icon });
+    var usedKeys = {};
+
+    for (var i = 0; i < n; i++) {
+      var rarity = rollRarity();
+      var pool = [];
+      for (var j = 0; j < UPGRADE_CATALOG.length; j++) {
+        if (UPGRADE_CATALOG[j].rarity === rarity && !usedKeys[UPGRADE_CATALOG[j].key]) pool.push(UPGRADE_CATALOG[j]);
+      }
+      // Fallback to any rarity if pool is empty
+      if (pool.length === 0) {
+        for (var j = 0; j < UPGRADE_CATALOG.length; j++) {
+          if (!usedKeys[UPGRADE_CATALOG[j].key]) pool.push(UPGRADE_CATALOG[j]);
+        }
+      }
+      if (pool.length === 0) break;
+      var pick = pool[Math.floor(Math.random() * pool.length)];
+      usedKeys[pick.key] = true;
+      choices.push({ key: pick.key, name: pick.name, desc: pick.desc, rarity: pick.rarity, icon: pick.icon });
     }
     return choices;
   };
 
-  /** Activate a named upgrade. */
+  /**
+   * Activate an upgrade by key. Returns result info for UI feedback.
+   * Immediate effects are applied now; temp effects set flags for next round.
+   */
   WarGameEngine.prototype.activateUpgrade = function (key) {
-    var def = NAMED_UPGRADES[key];
-    if (!def) return;
-    this.activeUpgrades.push({ key: key, name: def.name, desc: def.desc, duration: def.duration, durationType: def.durationType, icon: def.icon, remaining: def.duration });
-  };
-
-  /** Tick round-based upgrades (call after each round resolves). */
-  WarGameEngine.prototype.tickUpgrades = function () {
-    var kept = [];
-    for (var i = 0; i < this.activeUpgrades.length; i++) {
-      var u = this.activeUpgrades[i];
-      if (u.durationType === 'rounds') {
-        u.remaining--;
-        if (u.remaining > 0) kept.push(u);
-      } else {
-        kept.push(u);
-      }
+    var def = null;
+    for (var i = 0; i < UPGRADE_CATALOG.length; i++) {
+      if (UPGRADE_CATALOG[i].key === key) { def = UPGRADE_CATALOG[i]; break; }
     }
-    this.activeUpgrades = kept;
-  };
+    if (!def) return null;
 
-  /** Consume shield if active. Returns true if consumed. */
-  WarGameEngine.prototype.consumeShield = function () {
-    for (var i = 0; i < this.activeUpgrades.length; i++) {
-      if (this.activeUpgrades[i].key === 'shield') {
-        this.activeUpgrades.splice(i, 1);
-        return true;
-      }
-    }
-    return false;
-  };
+    var result = { key: key, name: def.name, rarity: def.rarity, icon: def.icon };
 
-  /** Consume double-down if active. Returns true if consumed. */
-  WarGameEngine.prototype.consumeDoubleDown = function () {
-    for (var i = 0; i < this.activeUpgrades.length; i++) {
-      if (this.activeUpgrades[i].key === 'doubleDown') {
-        this.activeUpgrades.splice(i, 1);
-        return true;
-      }
+    switch (key) {
+      case 'boost3':
+        this.nextCardBoost += 3;
+        break;
+      case 'boost5':
+        this.nextCardBoost += 5;
+        break;
+      case 'xpUp':
+        this.xpPerWin += 5;
+        result.detail = 'XP per win: ' + this.xpPerWin;
+        break;
+      case 'comboXpUp':
+        this.comboXpPercent += 5;
+        result.detail = 'Combo XP: +' + this.comboXpPercent + '%';
+        break;
+      case 'stealCard':
+        if (this.p2Hand.length > 0) {
+          var idx = Math.floor(Math.random() * this.p2Hand.length);
+          var stolen = this.p2Hand.splice(idx, 1)[0];
+          this.p1Hand.push(stolen);
+          result.stolenCard = stolen;
+          result.detail = 'Stole ' + stolen.rank + ' of ' + stolen.suit;
+        }
+        break;
+      case 'permBoost':
+        if (this.p1Hand.length > 0) {
+          var idx = Math.floor(Math.random() * this.p1Hand.length);
+          this.p1Hand[idx].value += 1;
+          result.boostedCard = this.p1Hand[idx];
+          result.detail = this.p1Hand[idx].rank + ' of ' + this.p1Hand[idx].suit + ' now has value ' + this.p1Hand[idx].value;
+        }
+        break;
+      case 'critXpUp':
+        this.criticalXpPercent += 25;
+        result.detail = 'War XP: ' + this.criticalXpPercent + '%';
+        break;
+      case 'autoWinWar':
+        this.autoWinWar = true;
+        break;
+      case 'moreChoices':
+        this.numUpgradeChoices += 1;
+        result.detail = 'Choices: ' + this.numUpgradeChoices;
+        break;
     }
-    return false;
-  };
 
-  /** Check if an upgrade is currently active. */
-  WarGameEngine.prototype.hasUpgrade = function (key) {
-    for (var i = 0; i < this.activeUpgrades.length; i++) {
-      if (this.activeUpgrades[i].key === key) return true;
-    }
-    return false;
-  };
-
-  /** Steal 2 extra cards from opponent (for double-down). Returns stolen cards. */
-  WarGameEngine.prototype.applyDoubleDownSteal = function () {
-    var stolen = [];
-    for (var i = 0; i < 2 && this.p2Hand.length > 0; i++) {
-      stolen.push(this.p2Hand.shift());
-    }
-    for (var i = 0; i < stolen.length; i++) this.p1Hand.push(stolen[i]);
-    return stolen;
+    return result;
   };
 
   /** Check game over. Returns { over, winner } where winner is 'player' or 'opponent' or null. */
@@ -550,12 +544,10 @@
   exports.cardValue = cardValue;
   exports.percentile = percentile;
   exports.stddev = stddev;
-  exports.upgradeEffects = upgradeEffects;
-  exports.upgradeTriggers = upgradeTriggers;
+  exports.RARITY_WEIGHTS = RARITY_WEIGHTS;
+  exports.rollRarity = rollRarity;
   exports.UPGRADE_CATALOG = UPGRADE_CATALOG;
-  exports.applyUpgrade = applyUpgrade;
   exports.playWarGame = playWarGame;
-  exports.NAMED_UPGRADES = NAMED_UPGRADES;
   exports.WarGameEngine = WarGameEngine;
 
 })(typeof module !== 'undefined' && module.exports

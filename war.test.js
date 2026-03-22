@@ -1,4 +1,4 @@
-const { createDeck, shuffle, playWarGame, percentile, stddev, upgradeEffects, upgradeTriggers, UPGRADE_CATALOG, applyUpgrade, cardValue } = require('./war-simulation');
+const { createDeck, shuffle, playWarGame, percentile, stddev, cardValue, WarGameEngine, createFullDeck, UPGRADE_CATALOG, rollRarity } = require('./war-simulation');
 
 let passed = 0;
 let failed = 0;
@@ -469,161 +469,185 @@ section('Statistical sanity over 50 random games');
 })();
 
 // ============================================================
-// UPGRADE: No upgrade = no bonus (backward compat)
+// INTERACTIVE ENGINE: XP & Combo system
 // ============================================================
-section('Upgrade: no upgrade option preserves original behavior');
+section('WarGameEngine: XP calculation with combo and critical');
 
 (() => {
-  const p1 = [14, 13, 12, 11, 10];
-  const p2 = [2, 3, 4, 5, 6];
-  const result = playWarGame({ p1Hand: p1, p2Hand: p2 });
-  assertEq(result.p1UpgradeLevel, 0, 'P1 upgrade level is 0 without upgrade option');
-  assertEq(result.p2UpgradeLevel, 0, 'P2 upgrade level is 0 without upgrade option');
-  assertEq(result.p1TotalUpgrades, 0, 'P1 total upgrades is 0');
-  assertEq(result.winner, 1, 'Same winner as before');
+  const engine = new WarGameEngine();
+  engine.setup();
+
+  // Base XP: 20, no combo, no war
+  assertEq(engine.calcXP(false), 20, 'Base XP is 20 with no combo');
+
+  // With combo = 2, comboXpPercent = 10: 20 * (1 + 2*0.10) = 20 * 1.2 = 24
+  engine.combo = 2;
+  assertEq(engine.calcXP(false), 24, 'Combo 2 gives 24 XP');
+
+  // War critical: 24 * 1.5 = 36
+  assertEq(engine.calcXP(true), 36, 'War critical with combo 2 gives 36 XP');
+
+  // Reset combo, war only: 20 * 1.5 = 30
+  engine.combo = 0;
+  assertEq(engine.calcXP(true), 30, 'War critical with no combo gives 30 XP');
 })();
 
 // ============================================================
-// UPGRADE: +1 per win, P1 only — turns a losing hand into a win
+// INTERACTIVE ENGINE: Evaluate with boost
 // ============================================================
-section('Upgrade: +1 per P1 win flips outcomes');
+section('WarGameEngine: evaluate with nextCardBoost');
 
 (() => {
-  // Without upgrade: P1 plays 10 vs 11 → P2 wins
-  // With +1 after first P1 win: P1 plays 10+1=11 vs 11 → tie (war or equal)
-  // With +2: 10+2=12 > 11 → P1 wins
+  const engine = new WarGameEngine();
+  engine.setup();
 
-  // Setup: P1 wins first 2 hands to get +2, then faces an 11
-  // P1: [14, 13, 10], P2: [2, 3, 11]
-  // Turn 1: 14+0=14 vs 2 → P1 wins. Upgrade fires → p1Level=1
-  // Turn 2: 13+1=14 vs 3 → P1 wins. Upgrade fires → p1Level=2
-  // Turn 3: 10+2=12 vs 11 → P1 wins! (without upgrade, 10 < 11 → P2 would win)
-  const upgrade = {
-    trigger: ({ winner }) => ({ p1Upgrade: winner === 1, p2Upgrade: false }),
-    effect: (level) => level,
-  };
-  const result = playWarGame({ p1Hand: [14, 13, 10], p2Hand: [2, 3, 11], upgrade });
-  assertEq(result.p1UpgradeLevel, 3, 'P1 upgraded 3 times (won all 3 hands)');
-  assertEq(result.winner, 1, 'P1 wins — upgrade turned 10 into effective 12 > 11');
-  assertEq(result.p1HandWins, 3, 'P1 won all 3 hands');
-  assertEq(result.turns, 3, 'Game ended in 3 turns');
+  const card7 = { suit: 'hearts', rank: '7', value: 7 };
+  const card10 = { suit: 'spades', rank: '10', value: 10 };
+
+  // Without boost: 7 vs 10 → opponent wins
+  var result = engine.evaluate(card7, card10);
+  assertEq(result.winner, 'opponent', '7 vs 10: opponent wins');
+  assertEq(result.boosted, false, 'Not boosted');
+
+  // With +5 boost: 7+5=12 vs 10 → player wins
+  engine.nextCardBoost = 5;
+  result = engine.evaluate(card7, card10);
+  assertEq(result.winner, 'player', '7+5 vs 10: player wins');
+  assertEq(result.playerEffective, 12, 'Effective value is 12');
+  assertEq(result.boosted, true, 'Was boosted');
+
+  // Boost is consumed
+  assertEq(engine.nextCardBoost, 0, 'Boost consumed after evaluate');
 })();
 
 // ============================================================
-// UPGRADE: Verify base card value is preserved (opponent wins base card)
+// INTERACTIVE ENGINE: Upgrade activation
 // ============================================================
-section('Upgrade: won cards retain base value');
+section('WarGameEngine: upgrade activation');
 
 (() => {
-  // P1: [14, 3], P2: [2, 13]
-  // Turn 1: 14+0=14 vs 2 → P1 wins. P1 deck: [3, 14, 2]. upgrade → level 1
-  // Turn 2: 3+1=4 vs 13 → P2 wins. P2 gets base cards [13, 3] (not 4!)
-  // Turn 3: P1 plays 14+1=15 vs 13 → P1 wins.
-  // Turn 4: P1 plays 2+2=4 vs 3 → P1 wins. (P2 got base 3, not boosted 4)
-  const upgrade = {
-    trigger: ({ winner }) => ({ p1Upgrade: winner === 1, p2Upgrade: false }),
-    effect: (level) => level,
-  };
-  const result = playWarGame({ p1Hand: [14, 3], p2Hand: [2, 13], upgrade, shufflePot: false });
-  assertEq(result.winner, 1, 'P1 wins overall');
-  // Key check: the game takes more than 2 turns because cards recycle at base value
-  assert(result.turns > 2, 'Game lasts >2 turns — cards recycle at base value');
+  const engine = new WarGameEngine();
+  engine.setup();
+
+  // boost3 adds +3 to nextCardBoost
+  engine.activateUpgrade('boost3');
+  assertEq(engine.nextCardBoost, 3, 'boost3 sets nextCardBoost to 3');
+
+  // boost5 stacks
+  engine.activateUpgrade('boost5');
+  assertEq(engine.nextCardBoost, 8, 'boost5 stacks to 8');
+
+  // xpUp increases xpPerWin
+  const oldXP = engine.xpPerWin;
+  engine.activateUpgrade('xpUp');
+  assertEq(engine.xpPerWin, oldXP + 5, 'xpUp adds 5 to xpPerWin');
+
+  // comboXpUp increases comboXpPercent
+  const oldCombo = engine.comboXpPercent;
+  engine.activateUpgrade('comboXpUp');
+  assertEq(engine.comboXpPercent, oldCombo + 5, 'comboXpUp adds 5%');
+
+  // critXpUp increases criticalXpPercent
+  const oldCrit = engine.criticalXpPercent;
+  engine.activateUpgrade('critXpUp');
+  assertEq(engine.criticalXpPercent, oldCrit + 25, 'critXpUp adds 25%');
+
+  // moreChoices increases numUpgradeChoices
+  const oldChoices = engine.numUpgradeChoices;
+  engine.activateUpgrade('moreChoices');
+  assertEq(engine.numUpgradeChoices, oldChoices + 1, 'moreChoices adds 1');
+
+  // autoWinWar sets flag
+  engine.activateUpgrade('autoWinWar');
+  assertEq(engine.autoWinWar, true, 'autoWinWar sets flag');
 })();
 
 // ============================================================
-// UPGRADE: +1 per win breaks a war tie
+// INTERACTIVE ENGINE: Steal card
 // ============================================================
-section('Upgrade: bonus breaks what would be a tie');
+section('WarGameEngine: steal card');
 
 (() => {
-  // Without upgrade: 7 vs 7 → war
-  // With +1 (from a prior win): 7+1=8 vs 7 → P1 wins, no war
-  // P1: [14, 7], P2: [2, 7]
-  // Turn 1: 14+0 vs 2 → P1 wins. Level→1
-  // Turn 2: 7+1=8 vs 7 → P1 wins (no war!)
-  const upgrade = {
-    trigger: ({ winner }) => ({ p1Upgrade: winner === 1, p2Upgrade: false }),
-    effect: (level) => level,
-  };
-  const result = playWarGame({ p1Hand: [14, 7], p2Hand: [2, 7], upgrade });
-  assertEq(result.wars, 0, 'No wars — upgrade broke the tie');
-  assertEq(result.turns, 2, 'Game ends in 2 turns');
-  assertEq(result.p1UpgradeLevel, 2, 'P1 at upgrade level 2');
+  const engine = new WarGameEngine();
+  engine.setup();
+  const p1Before = engine.p1Hand.length;
+  const p2Before = engine.p2Hand.length;
+
+  engine.activateUpgrade('stealCard');
+  assertEq(engine.p1Hand.length, p1Before + 1, 'Player gains 1 card from steal');
+  assertEq(engine.p2Hand.length, p2Before - 1, 'Opponent loses 1 card from steal');
 })();
 
 // ============================================================
-// UPGRADE: Every N turns trigger
+// INTERACTIVE ENGINE: Permanent boost (permBoost)
 // ============================================================
-section('Upgrade: every-N-turns trigger');
+section('WarGameEngine: permanent card boost');
 
 (() => {
-  // Upgrade P1 every 2 turns. Use a quick game: P1 all high cards, ends in 3 turns.
-  // Turn 1: no upgrade (odd). Turn 2: upgrade → level 1. Turn 3: no upgrade (odd).
-  const upgrade = {
-    trigger: ({ turns }) => ({ p1Upgrade: turns % 2 === 0, p2Upgrade: false }),
-    effect: (level) => level,
-  };
-  const result = playWarGame({
-    p1Hand: [14, 13, 12],
-    p2Hand: [2, 3, 4],
-    upgrade,
-    shufflePot: false,
+  const engine = new WarGameEngine();
+  engine.setup();
+  const totalValueBefore = engine.p1Hand.reduce((s, c) => s + c.value, 0);
+
+  engine.activateUpgrade('permBoost');
+  const totalValueAfter = engine.p1Hand.reduce((s, c) => s + c.value, 0);
+  assertEq(totalValueAfter, totalValueBefore + 1, 'One card got +1 permanent value');
+})();
+
+// ============================================================
+// INTERACTIVE ENGINE: Rarity rolling
+// ============================================================
+section('Rarity rolling distribution');
+
+(() => {
+  let counts = { common: 0, rare: 0, epic: 0 };
+  const N = 1000;
+  for (let i = 0; i < N; i++) counts[rollRarity()]++;
+
+  // With 70/20/10 weights, expect roughly those proportions (±10% tolerance)
+  assert(counts.common > 500, `Common > 500/1000 (got ${counts.common})`);
+  assert(counts.rare > 50, `Rare > 50/1000 (got ${counts.rare})`);
+  assert(counts.epic > 5, `Epic > 5/1000 (got ${counts.epic})`);
+})();
+
+// ============================================================
+// INTERACTIVE ENGINE: getUpgradeChoices returns correct count
+// ============================================================
+section('WarGameEngine: getUpgradeChoices');
+
+(() => {
+  const engine = new WarGameEngine();
+  engine.setup();
+
+  const choices = engine.getUpgradeChoices();
+  assertEq(choices.length, 3, 'Default 3 choices');
+  assert(choices.every(c => c.rarity), 'All choices have rarity');
+  assert(choices.every(c => c.key && c.name && c.desc && c.icon), 'All choices have required fields');
+
+  // No duplicates
+  const keys = choices.map(c => c.key);
+  assertEq(new Set(keys).size, keys.length, 'No duplicate choices');
+
+  // After moreChoices upgrade
+  engine.activateUpgrade('moreChoices');
+  const choices2 = engine.getUpgradeChoices();
+  assertEq(choices2.length, 4, '4 choices after moreChoices upgrade');
+})();
+
+// ============================================================
+// UPGRADE CATALOG: All entries have required fields
+// ============================================================
+section('Upgrade catalog integrity');
+
+(() => {
+  assert(UPGRADE_CATALOG.length === 9, 'Catalog has 9 upgrades');
+  const rarities = { common: 0, rare: 0, epic: 0 };
+  UPGRADE_CATALOG.forEach(u => {
+    assert(u.key && u.name && u.desc && u.rarity && u.icon, `${u.key} has all fields`);
+    rarities[u.rarity]++;
   });
-  assertEq(result.turns, 3, 'Game ends in exactly 3 turns');
-  assertEq(result.p1UpgradeLevel, 1, 'P1 upgraded once (turn 2 only)');
-})();
-
-// ============================================================
-// UPGRADE: upgradeEffects.plusOne works correctly
-// ============================================================
-section('Upgrade: built-in plusOne effect');
-
-(() => {
-  assertEq(upgradeEffects.plusOne(0), 0, 'plusOne at level 0 = 0 bonus');
-  assertEq(upgradeEffects.plusOne(1), 1, 'plusOne at level 1 = 1 bonus');
-  assertEq(upgradeEffects.plusOne(5), 5, 'plusOne at level 5 = 5 bonus');
-})();
-
-// ============================================================
-// UPGRADE: Card conservation still holds with upgrades
-// ============================================================
-section('Upgrade: card conservation with upgrades');
-
-(() => {
-  const upgrade = {
-    trigger: ({ winner }) => ({ p1Upgrade: winner === 1, p2Upgrade: false }),
-    effect: (level) => level,
-  };
-  for (let i = 0; i < 20; i++) {
-    const result = playWarGame({ upgrade });
-    assert(result.p1Remaining + result.p2Remaining === 52,
-      `Game ${i + 1}: cards conserved (${result.p1Remaining} + ${result.p2Remaining} = 52)`);
-  }
-})();
-
-// ============================================================
-// UPGRADE: P1 with +1 per win dramatically increases win rate (statistical)
-// ============================================================
-section('Upgrade: statistical — +1/win heavily favors P1');
-
-(() => {
-  const upgrade = {
-    trigger: ({ winner }) => ({ p1Upgrade: winner === 1, p2Upgrade: false }),
-    effect: (level) => level,
-  };
-  let p1Wins = 0;
-  const N = 200;
-  const turnCounts = [];
-  for (let i = 0; i < N; i++) {
-    const r = playWarGame({ upgrade });
-    if (r.winner === 1) p1Wins++;
-    turnCounts.push(r.turns);
-  }
-  const winRate = p1Wins / N;
-  const avgTurns = turnCounts.reduce((a, b) => a + b, 0) / N;
-  console.log(`    (P1 win rate: ${(winRate * 100).toFixed(1)}%, avg turns: ${avgTurns.toFixed(1)})`);
-  assert(winRate > 0.90, `P1 win rate > 90% with +1/win upgrade (got ${(winRate * 100).toFixed(1)}%)`);
-  assert(avgTurns < 200, `Average turns < 200 with upgrade (got ${avgTurns.toFixed(1)})`);
+  assertEq(rarities.common, 4, '4 common upgrades');
+  assertEq(rarities.rare, 3, '3 rare upgrades');
+  assertEq(rarities.epic, 2, '2 epic upgrades');
 })();
 
 // ============================================================

@@ -167,15 +167,26 @@ var Anim = {
   },
 };
 
-// ===== UPGRADE BADGE RENDERER =====
+// ===== STATUS BADGE RENDERER =====
 
-function renderUpgradeBadges(upgrades, container) {
+function renderStatusBadges(engine, container) {
   container.innerHTML = '';
-  for (var i = 0; i < upgrades.length; i++) {
-    var u = upgrades[i];
+  if (engine.nextCardBoost > 0) {
     var span = document.createElement('span');
     span.className = 'upgrade-badge';
-    span.textContent = u.icon + ' ' + u.name + ' (' + u.remaining + ')';
+    span.textContent = '\u2B06 +' + engine.nextCardBoost + ' next card';
+    container.appendChild(span);
+  }
+  if (engine.autoWinWar) {
+    var span = document.createElement('span');
+    span.className = 'upgrade-badge upgrade-badge--epic';
+    span.textContent = '\uD83D\uDC51 Auto-Win War';
+    container.appendChild(span);
+  }
+  if (engine.combo > 0) {
+    var span = document.createElement('span');
+    span.className = 'upgrade-badge upgrade-badge--combo';
+    span.textContent = '\uD83D\uDD25 x' + engine.combo + ' combo';
     container.appendChild(span);
   }
 }
@@ -188,6 +199,7 @@ function GameUI() {
 
   // Card element tracking: Map<card object, DOM element>
   this.cardElements = new Map();
+  this.roundHadWar = false;
 
   this.els = {
     playerDeckEl: document.getElementById('player-deck'),
@@ -218,6 +230,7 @@ function GameUI() {
 GameUI.prototype.start = function () {
   this.state = UI_STATES.IDLE;
   this.cardElements = new Map();
+  this.roundHadWar = false;
 
   this.els.gameoverOverlay.classList.add('hidden');
   this.els.upgradeOverlay.classList.add('hidden');
@@ -226,7 +239,7 @@ GameUI.prototype.start = function () {
   this.engine.setup();
   this.syncDecks();
   this.updateXPBar();
-  this.renderUpgrades();
+  this.renderStatus();
   this.beginRound();
 };
 
@@ -256,8 +269,8 @@ GameUI.prototype.updateXPBar = function () {
   this.els.xpLabel.textContent = 'XP: ' + progress.current + ' / ' + progress.needed;
 };
 
-GameUI.prototype.renderUpgrades = function () {
-  renderUpgradeBadges(this.engine.activeUpgrades, this.els.activeUpgrades);
+GameUI.prototype.renderStatus = function () {
+  renderStatusBadges(this.engine, this.els.activeUpgrades);
 };
 
 /** Create a card DOM element and track it. */
@@ -349,60 +362,41 @@ GameUI.prototype.resolveWin = async function (winner) {
   this.state = UI_STATES.RESOLVE_WIN;
   var leveledUp = false;
 
-  // Shield check
-  if (winner === 'opponent' && this.engine.consumeShield()) {
-    await Anim.resultFlash('SHIELDED!', '#3498db');
+  var label = winner === 'player' ? 'YOU WIN!' : 'YOU LOSE';
+  var color = winner === 'player' ? '#2ecc71' : '#e74c3c';
 
-    // Collect all visible card elements
-    var allEls = this.getAllVisibleCardEls();
-    var destPlayerEl = this.els.playerDeckEl;
-    var destOppEl = this.els.opponentDeckEl;
+  // Show critical flash for war wins
+  if (this.roundHadWar && winner === 'player') {
+    label = 'CRITICAL WIN!';
+    color = '#f1c40f';
+  }
+  await Anim.resultFlash(label, color);
 
-    // Animate player cards back to player, opponent cards back to opponent
-    var playerEls = [];
-    var oppEls = [];
-    for (var i = 0; i < this.engine.pot.length; i++) {
-      var entry = this.engine.pot[i];
-      var el = this.getCardEl(entry.card);
-      if (el) {
-        if (entry.owner === 'player') playerEls.push(el);
-        else oppEls.push(el);
-      }
-    }
+  // Collect all visible card elements to winner's deck
+  var allEls = this.getAllVisibleCardEls();
+  var destEl = winner === 'player' ? this.els.playerDeckEl : this.els.opponentDeckEl;
 
-    if (playerEls.length > 0) await Anim.collectCards(playerEls, destPlayerEl);
-    if (oppEls.length > 0) await Anim.collectCards(oppEls, destOppEl);
+  if (allEls.length > 0) {
+    await Anim.collectCards(allEls, destEl);
+  }
 
-    // Engine handles card redistribution
-    this.engine.collectShielded();
+  // Engine handles card redistribution
+  this.engine.collectToWinner(winner);
+
+  // XP and combo for player wins
+  if (winner === 'player') {
+    this.engine.combo++;
+    var xpGain = this.engine.calcXP(this.roundHadWar);
+    leveledUp = this.engine.addXP(xpGain);
   } else {
-    // Normal win
-    var label = winner === 'player' ? 'YOU WIN!' : 'YOU LOSE';
-    var color = winner === 'player' ? '#2ecc71' : '#e74c3c';
-    await Anim.resultFlash(label, color);
-
-    // Collect all visible card elements to winner's deck
-    var allEls = this.getAllVisibleCardEls();
-    var destEl = winner === 'player' ? this.els.playerDeckEl : this.els.opponentDeckEl;
-
-    if (allEls.length > 0) {
-      await Anim.collectCards(allEls, destEl);
-    }
-
-    // Engine handles card redistribution
-    this.engine.collectToWinner(winner);
-
-    // XP for player wins
-    if (winner === 'player') {
-      leveledUp = this.engine.addXP(this.engine.xpPerWin);
-    }
+    this.engine.combo = 0;
   }
 
   // Release all tracked card elements
   this.cardElements = new Map();
+  this.roundHadWar = false;
 
-  this.engine.tickUpgrades();
-  this.renderUpgrades();
+  this.renderStatus();
   this.syncDecks();
   this.clearBattleZone();
   await this.checkUpgrade(leveledUp);
@@ -410,6 +404,32 @@ GameUI.prototype.resolveWin = async function (winner) {
 
 GameUI.prototype.resolveWar = async function () {
   this.state = UI_STATES.RESOLVE_WAR;
+  this.roundHadWar = true;
+
+  // Auto-win war upgrade
+  if (this.engine.autoWinWar) {
+    this.engine.autoWinWar = false;
+    await Anim.resultFlash('AUTO-WIN!', '#f1c40f');
+    this.engine.collectToWinner('player');
+    this.renderStatus();
+
+    // Collect visible cards then resolve as player win
+    var allEls = this.getAllVisibleCardEls();
+    if (allEls.length > 0) await Anim.collectCards(allEls, this.els.playerDeckEl);
+    this.cardElements = new Map();
+    this.syncDecks();
+    this.clearBattleZone();
+
+    // Give XP as a war win
+    this.engine.combo++;
+    var xpGain = this.engine.calcXP(true);
+    var leveledUp = this.engine.addXP(xpGain);
+    this.roundHadWar = false;
+    this.renderStatus();
+    await this.checkUpgrade(leveledUp);
+    return;
+  }
+
   await Anim.resultFlash('WAR!', '#f1c40f');
 
   // Check if both sides can afford war
@@ -485,17 +505,18 @@ GameUI.prototype.showUpgradeChoice = function () {
   var self = this;
   return new Promise(function (resolve) {
     self.state = UI_STATES.UPGRADE_CHOICE;
-    var choices = self.engine.getUpgradeChoices(3);
+    var choices = self.engine.getUpgradeChoices();
     self.els.upgradeChoices.innerHTML = '';
 
     choices.forEach(function (ch) {
       var div = document.createElement('div');
-      div.className = 'upgrade-card';
-      div.innerHTML = '<h3>' + ch.icon + ' ' + ch.name + '</h3><p>' + ch.desc +
-        ' <span style="opacity:0.5">(' + ch.duration + ' ' + ch.durationType + ')</span></p>';
+      div.className = 'upgrade-card upgrade-card--' + ch.rarity;
+      div.innerHTML = '<div class="upgrade-rarity-tag">' + ch.rarity.toUpperCase() + '</div>' +
+        '<h3>' + ch.icon + ' ' + ch.name + '</h3><p>' + ch.desc + '</p>';
       div.addEventListener('click', function () {
         self.engine.activateUpgrade(ch.key);
-        self.renderUpgrades();
+        self.renderStatus();
+        self.syncDecks();
         self.els.upgradeOverlay.classList.add('hidden');
         resolve();
       });
