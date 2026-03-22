@@ -124,7 +124,7 @@
   UPGRADE_CATALOG.push(
     { key: 'autoWinWar',  name: 'Auto-Win War',  desc: 'Automatically win the next war',             rarity: 'epic',   icon: '\uD83D\uDC51' },
     { key: 'moreChoices', name: 'More Choices',   desc: 'Permanently get +1 upgrade choice',         rarity: 'epic',   icon: '\uD83C\uDFB0' },
-    { key: 'lossXpUp',    name: 'Consolation XP', desc: 'Gain 5% of base XP when losing a battle',  rarity: 'epic',   icon: '\uD83D\uDEE1' }
+    { key: 'lossXpUp',    name: 'Consolation XP', desc: 'Gain 10% of base XP when losing a battle', rarity: 'epic',   icon: '\uD83D\uDEE1' }
   );
 
   // ===== HEADLESS SIMULATION =====
@@ -292,6 +292,8 @@
     this.autoWinWar = false;
     this.lossXpPercent = 0;
     this.upgradeHistory = {};
+    this.rankBoosts = {};
+    this.stats = { rounds: 0, wins: 0, losses: 0, wars: 0, maxCombo: 0, upgradesPicked: 0, cardsStolen: 0 };
   }
 
   WarGameEngine.prototype.setup = function () {
@@ -312,6 +314,8 @@
     this.autoWinWar = false;
     this.lossXpPercent = 0;
     this.upgradeHistory = {};
+    this.rankBoosts = {};
+    this.stats = { rounds: 0, wins: 0, losses: 0, wars: 0, maxCombo: 0, upgradesPicked: 0, cardsStolen: 0 };
   };
 
   WarGameEngine.prototype.getP1Count = function () { return this.p1Hand.length; };
@@ -356,8 +360,9 @@
    * Returns { winner: 'player'|'opponent'|'tie', playerEffective, opponentEffective, boosted }
    */
   WarGameEngine.prototype.evaluate = function (playerCard, opponentCard) {
-    var pv = playerCard.value;
-    var ov = opponentCard.value;
+    // Player gets permanent rank boosts; opponent always uses base value
+    var pv = playerCard.baseValue + (this.rankBoosts[playerCard.rank] || 0);
+    var ov = opponentCard.baseValue;
     var boosted = false;
 
     if (this.nextCardBoost > 0) {
@@ -551,22 +556,20 @@
         result.detail = 'Choices: ' + this.numUpgradeChoices;
         break;
       case 'lossXpUp':
-        this.lossXpPercent += 5;
+        this.lossXpPercent += 10;
         result.detail = 'Loss XP: ' + this.lossXpPercent + '%';
         break;
       default:
-        // Handle per-rank permanent boosts
+        // Handle per-rank permanent boosts via rankBoosts map
         if (key.indexOf('permBoost2_') === 0) {
           var targetRank = key.substring('permBoost2_'.length);
-          for (var bi = 0; bi < this.p1Hand.length; bi++) {
-            if (this.p1Hand[bi].rank === targetRank) this.p1Hand[bi].value += 2;
-          }
+          if (!this.rankBoosts[targetRank]) this.rankBoosts[targetRank] = 0;
+          this.rankBoosts[targetRank] += 2;
           result.detail = 'All ' + targetRank + 's permanently +2';
         } else if (key.indexOf('permBoost_') === 0) {
           var targetRank = key.substring('permBoost_'.length);
-          for (var bi = 0; bi < this.p1Hand.length; bi++) {
-            if (this.p1Hand[bi].rank === targetRank) this.p1Hand[bi].value += 1;
-          }
+          if (!this.rankBoosts[targetRank]) this.rankBoosts[targetRank] = 0;
+          this.rankBoosts[targetRank] += 1;
           result.detail = 'All ' + targetRank + 's permanently +1';
         }
         break;
@@ -575,6 +578,8 @@
     // Track upgrade history
     if (!this.upgradeHistory[key]) this.upgradeHistory[key] = 0;
     this.upgradeHistory[key]++;
+    this.stats.upgradesPicked++;
+    if (key === 'stealCard' && result.stolenCard) this.stats.cardsStolen++;
 
     return result;
   };
