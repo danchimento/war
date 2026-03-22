@@ -168,10 +168,49 @@ var Anim = {
 
       tl.to(el, {
         x: dx, y: dy, scale: 0.7, opacity: 0,
-        duration: 0.3, ease: 'power2.in',
+        duration: 0.2, ease: 'power2.in',
         onComplete: function () { if (el.parentNode) el.remove(); },
-      }, i * 0.08);
+      }, i * 0.04);
     });
+
+    return tl;
+  },
+
+  /** Cards vibrate, smash toward each other, winner glows + grows, loser shrinks + dims. */
+  cardClash: function (winnerEl, loserEl, winnerSide) {
+    var winColor = winnerSide === 'player' ? '#2ecc71' : '#e74c3c';
+    var winFront = winnerEl.querySelector('.card-front');
+    var tl = gsap.timeline();
+
+    // 1. Brief intense vibration
+    tl.to([winnerEl, loserEl], {
+      x: '+=3', duration: 0.03, ease: 'none',
+      yoyo: true, repeat: 5
+    })
+    // 2. Smash toward each other
+    .to(winnerEl, {
+      y: winnerSide === 'player' ? -12 : 12,
+      duration: 0.12, ease: 'power2.in'
+    }, '+=0.02')
+    .to(loserEl, {
+      y: winnerSide === 'player' ? 12 : -12,
+      duration: 0.12, ease: 'power2.in'
+    }, '<')
+    // 3. Winner grows + glows
+    .to(winnerEl, {
+      scale: 1.15, duration: 0.2, ease: 'back.out(2)'
+    })
+    .to(winFront, {
+      boxShadow: '0 0 20px 6px ' + winColor,
+      duration: 0.2
+    }, '<')
+    // 4. Loser shrinks + dims
+    .to(loserEl, {
+      scale: 0.85, opacity: 0.5,
+      duration: 0.2, ease: 'power2.out'
+    }, '<')
+    // 5. Hold briefly
+    .to({}, { duration: 0.25 });
 
     return tl;
   },
@@ -226,6 +265,7 @@ function GameUI() {
   this.lastPlayerCount = 26;
   this.warState = null;
   this.warOpponentTimer = null;
+  this.lastCompareEls = null;
 
   this.els = {
     playerDeckEl: document.getElementById('player-deck'),
@@ -245,6 +285,11 @@ function GameUI() {
     evalBarFill: document.getElementById('eval-bar-fill'),
     evalBar: document.getElementById('eval-bar'),
     comboDisplay: document.getElementById('combo-display'),
+    upgradeConfirmBtn: document.getElementById('upgrade-confirm-btn'),
+    historyFab: document.getElementById('history-fab'),
+    historyOverlay: document.getElementById('history-overlay'),
+    historyList: document.getElementById('history-list'),
+    historyCloseBtn: document.getElementById('history-close-btn'),
   };
 
   this.playerDeckView = new DeckView(this.els.playerDeckEl);
@@ -265,6 +310,7 @@ GameUI.prototype.start = function () {
 
   this.els.gameoverOverlay.classList.add('hidden');
   this.els.upgradeOverlay.classList.add('hidden');
+  this.els.historyOverlay.classList.add('hidden');
   this.clearBattleZone();
   this.hideCombo();
 
@@ -286,6 +332,12 @@ GameUI.prototype.bindEvents = function () {
   this.els.playerDeckEl.addEventListener('touchend', tapHandler);
   this.els.restartBtn.addEventListener('click', function () { self.start(); });
   document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  // Upgrade history FAB
+  this.els.historyFab.addEventListener('click', function () { self.showUpgradeHistory(); });
+  this.els.historyCloseBtn.addEventListener('click', function () {
+    self.els.historyOverlay.classList.add('hidden');
+  });
 
   // Badge tooltip
   this.els.activeUpgrades.addEventListener('click', function (e) {
@@ -378,10 +430,28 @@ GameUI.prototype.updateCombo = function () {
   if (combo >= 2) {
     el.textContent = 'x' + combo + ' COMBO';
     el.classList.remove('hidden');
-    gsap.fromTo(el, { scale: 1.3 }, { scale: 1, duration: 0.25, ease: 'back.out(2)' });
+    gsap.fromTo(el,
+      { scale: 2, opacity: 0.5 },
+      { scale: 1, opacity: 1, duration: 0.4, ease: 'elastic.out(1, 0.5)' }
+    );
+    this.comboRing();
   } else {
     el.classList.add('hidden');
   }
+};
+
+GameUI.prototype.comboRing = function () {
+  var el = this.els.comboDisplay;
+  var rect = el.getBoundingClientRect();
+  var ring = document.createElement('div');
+  ring.className = 'combo-ring';
+  ring.style.left = (rect.left + rect.width / 2) + 'px';
+  ring.style.top = (rect.top + rect.height / 2) + 'px';
+  document.body.appendChild(ring);
+  gsap.fromTo(ring,
+    { scale: 0.5, opacity: 0.8 },
+    { scale: 3, opacity: 0, duration: 0.6, ease: 'power2.out', onComplete: function () { ring.remove(); } }
+  );
 };
 
 GameUI.prototype.hideCombo = function () {
@@ -459,7 +529,7 @@ GameUI.prototype.playInitialCards = async function () {
   if (pCard.value > pCard.baseValue) {
     updateBoostBadge(pEl, pCard.value - pCard.baseValue);
   }
-  await Anim.delay(0.3);
+  await Anim.delay(0.15);
 
   // Evaluate
   var result = this.engine.evaluate(pCard, oCard);
@@ -467,8 +537,10 @@ GameUI.prototype.playInitialCards = async function () {
   // Show boost badge (combined permanent + temporary)
   if (result.boosted) {
     updateBoostBadge(pEl, result.playerEffective - pCard.baseValue);
-    await Anim.delay(0.3);
+    await Anim.delay(0.15);
   }
+
+  this.lastCompareEls = { player: pEl, opponent: oEl };
 
   if (result.winner === 'tie') {
     await this.resolveWar();
@@ -553,14 +625,16 @@ GameUI.prototype.checkWarComplete = async function () {
   if (pCard.value > pCard.baseValue) {
     updateBoostBadge(pEl, pCard.value - pCard.baseValue);
   }
-  await Anim.delay(0.3);
+  await Anim.delay(0.15);
 
   var result = this.engine.evaluate(pCard, oCard);
 
   if (result.boosted) {
     updateBoostBadge(pEl, result.playerEffective - pCard.baseValue);
-    await Anim.delay(0.3);
+    await Anim.delay(0.15);
   }
+
+  this.lastCompareEls = { player: pEl, opponent: oEl };
 
   if (this.autoWinActive) {
     this.autoWinActive = false;
@@ -577,18 +651,22 @@ GameUI.prototype.resolveWin = async function (winner) {
   this.state = UI_STATES.ANIMATING;
   var leveledUp = false;
 
-  var label = winner === 'player' ? 'YOU WIN!' : 'YOU LOSE';
-  var color = winner === 'player' ? '#2ecc71' : '#e74c3c';
-
-  if (this.roundHadWar && winner === 'player') {
-    label = 'CRITICAL WIN!';
-    color = '#f1c40f';
+  // Card clash animation replaces text flash
+  var compareEls = this.lastCompareEls;
+  if (compareEls) {
+    var winEl = winner === 'player' ? compareEls.player : compareEls.opponent;
+    var loseEl = winner === 'player' ? compareEls.opponent : compareEls.player;
+    await Anim.cardClash(winEl, loseEl, winner);
   }
-  await Anim.resultFlash(label, color);
+
+  // Extra flash for critical war win
+  if (this.roundHadWar && winner === 'player') {
+    await Anim.resultFlash('CRITICAL WIN!', '#f1c40f');
+  }
 
   // Flip all face-down cards so player sees what was won
   await Anim.flipAllFaceDown([this.els.playerCards, this.els.opponentCards]);
-  await Anim.delay(0.5);
+  await Anim.delay(0.25);
 
   // Collect all visible card elements to winner's deck
   var allEls = this.getAllVisibleCardEls();
@@ -609,6 +687,14 @@ GameUI.prototype.resolveWin = async function (winner) {
     leveledUp = this.engine.addXP(xpGain);
     this.engine.combo++;
   } else {
+    // Loss XP if upgraded
+    if (this.engine.lossXpPercent > 0) {
+      var lossXp = Math.floor(this.engine.xpPerWin * this.engine.lossXpPercent / 100);
+      if (lossXp > 0) {
+        this.showXPPopup(lossXp);
+        leveledUp = this.engine.addXP(lossXp);
+      }
+    }
     this.engine.combo = 0;
   }
 
@@ -687,26 +773,43 @@ GameUI.prototype.showUpgradeChoice = function () {
     var choices = self.engine.getUpgradeChoices();
     self.els.upgradeChoices.innerHTML = '';
 
+    var selectedKey = null;
+    var selectedDiv = null;
+    var confirmBtn = self.els.upgradeConfirmBtn;
+    confirmBtn.disabled = true;
+    confirmBtn.classList.add('btn--disabled');
+
     choices.forEach(function (ch) {
       var div = document.createElement('div');
       div.className = 'upgrade-card upgrade-card--' + ch.rarity;
       div.innerHTML = '<div class="upgrade-rarity-tag">' + ch.rarity.toUpperCase() + '</div>' +
         '<h3>' + ch.icon + ' ' + ch.name + '</h3><p>' + ch.desc + '</p>';
       div.addEventListener('click', function () {
-        var result = self.engine.activateUpgrade(ch.key);
-        self.renderStatus();
-        self.syncDecks();
-        self.els.upgradeOverlay.classList.add('hidden');
-
-        // Show stolen card before resolving
-        if (result && result.stolenCard) {
-          self.showStolenCard(result.stolenCard).then(resolve);
-        } else {
-          resolve();
-        }
+        if (selectedDiv) selectedDiv.classList.remove('upgrade-card--selected');
+        selectedDiv = div;
+        selectedKey = ch.key;
+        div.classList.add('upgrade-card--selected');
+        confirmBtn.disabled = false;
+        confirmBtn.classList.remove('btn--disabled');
       });
       self.els.upgradeChoices.appendChild(div);
     });
+
+    var handler = function () {
+      if (!selectedKey) return;
+      confirmBtn.removeEventListener('click', handler);
+      var result = self.engine.activateUpgrade(selectedKey);
+      self.renderStatus();
+      self.syncDecks();
+      self.els.upgradeOverlay.classList.add('hidden');
+
+      if (result && result.stolenCard) {
+        self.showStolenCard(result.stolenCard).then(resolve);
+      } else {
+        resolve();
+      }
+    };
+    confirmBtn.addEventListener('click', handler);
 
     self.els.upgradeOverlay.classList.remove('hidden');
   });
@@ -728,6 +831,42 @@ GameUI.prototype.showStolenCard = async function (card) {
   await Anim.collectCards([cardEl], this.els.playerDeckEl);
   this.clearBattleZone();
   this.syncDecks();
+};
+
+// --- Upgrade History ---
+
+var PERMANENT_KEYS = ['xpUp', 'comboXpUp', 'critXpUp', 'moreChoices', 'lossXpUp'];
+
+GameUI.prototype.showUpgradeHistory = function () {
+  var history = this.engine.upgradeHistory;
+  var catalog = WS.UPGRADE_CATALOG;
+  var list = this.els.historyList;
+  list.innerHTML = '';
+
+  var hasAny = false;
+  for (var i = 0; i < catalog.length; i++) {
+    var def = catalog[i];
+    var count = history[def.key] || 0;
+    if (count === 0) continue;
+    // Only permanent upgrades
+    var isPerm = PERMANENT_KEYS.indexOf(def.key) >= 0 ||
+      def.key.indexOf('permBoost') === 0;
+    if (!isPerm) continue;
+    hasAny = true;
+
+    var row = document.createElement('div');
+    row.className = 'history-row';
+    row.innerHTML = '<span class="history-icon">' + def.icon + '</span>' +
+      '<span class="history-name">' + def.name + '</span>' +
+      '<span class="history-count">x' + count + '</span>';
+    list.appendChild(row);
+  }
+
+  if (!hasAny) {
+    list.innerHTML = '<p style="opacity:.5;font-size:13px;">No permanent upgrades yet.</p>';
+  }
+
+  this.els.historyOverlay.classList.remove('hidden');
 };
 
 // --- Game Over ---

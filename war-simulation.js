@@ -89,6 +89,8 @@
     // Common
     { key: 'boost3',    name: '+3 Value',      desc: '+3 to your next card',                       rarity: 'common', icon: '\u2B06' },
     { key: 'boost5',    name: '+5 Value',      desc: '+5 to your next card',                       rarity: 'common', icon: '\u23EB' },
+    { key: 'boost7',    name: '+7 Value',      desc: '+7 to your next card',                       rarity: 'common', icon: '\u23EB' },
+    { key: 'boost10',   name: '+10 Value',     desc: '+10 to your next card',                      rarity: 'common', icon: '\u23EB' },
     { key: 'xpUp',      name: 'XP Up',         desc: 'Permanently gain +5 XP per win',             rarity: 'common', icon: '\u2B50' },
     { key: 'comboXpUp', name: 'Combo XP Up',   desc: 'Permanently increase combo XP bonus by +5%', rarity: 'common', icon: '\uD83D\uDD25' },
     // Rare
@@ -96,9 +98,9 @@
     { key: 'critXpUp',  name: 'Crit XP Up',    desc: 'Permanently increase War XP bonus by +25%',  rarity: 'rare',   icon: '\u26A1' },
   ];
 
-  // Generate per-rank permanent upgrade cards (all common)
+  // Generate per-rank permanent upgrade cards (+1 common, +2 rare)
   for (var ri = 0; ri < RANKS.length; ri++) {
-    (function (rank, val) {
+    (function (rank) {
       UPGRADE_CATALOG.push({
         key: 'permBoost_' + rank,
         name: 'Empower ' + rank,
@@ -107,13 +109,22 @@
         icon: '\uD83D\uDC8E',
         targetRank: rank,
       });
-    })(RANKS[ri], RANK_VALUES[RANKS[ri]]);
+      UPGRADE_CATALOG.push({
+        key: 'permBoost2_' + rank,
+        name: 'Supercharge ' + rank,
+        desc: 'Permanently improve the value of all ' + rank + 's by 2',
+        rarity: 'rare',
+        icon: '\uD83D\uDC8E',
+        targetRank: rank,
+      });
+    })(RANKS[ri]);
   }
 
   // Epic
   UPGRADE_CATALOG.push(
-    { key: 'autoWinWar',  name: 'Auto-Win War',  desc: 'Automatically win the next war',           rarity: 'epic',   icon: '\uD83D\uDC51' },
-    { key: 'moreChoices', name: 'More Choices',   desc: 'Permanently get +1 upgrade choice',       rarity: 'epic',   icon: '\uD83C\uDFB0' }
+    { key: 'autoWinWar',  name: 'Auto-Win War',  desc: 'Automatically win the next war',             rarity: 'epic',   icon: '\uD83D\uDC51' },
+    { key: 'moreChoices', name: 'More Choices',   desc: 'Permanently get +1 upgrade choice',         rarity: 'epic',   icon: '\uD83C\uDFB0' },
+    { key: 'lossXpUp',    name: 'Consolation XP', desc: 'Gain 5% of base XP when losing a battle',  rarity: 'epic',   icon: '\uD83D\uDEE1' }
   );
 
   // ===== HEADLESS SIMULATION =====
@@ -279,6 +290,8 @@
     this.numUpgradeChoices = 3;
     this.nextCardBoost = 0;
     this.autoWinWar = false;
+    this.lossXpPercent = 0;
+    this.upgradeHistory = {};
   }
 
   WarGameEngine.prototype.setup = function () {
@@ -290,13 +303,15 @@
 
     this.xp = 0;
     this.xpPerWin = 20;
-    this.criticalXpPercent = 150;
+    this.criticalXpPercent = 200;
     this.comboXpPercent = 10;
     this.combo = 0;
 
     this.numUpgradeChoices = 3;
     this.nextCardBoost = 0;
     this.autoWinWar = false;
+    this.lossXpPercent = 0;
+    this.upgradeHistory = {};
   };
 
   WarGameEngine.prototype.getP1Count = function () { return this.p1Hand.length; };
@@ -501,6 +516,12 @@
       case 'boost5':
         this.nextCardBoost += 5;
         break;
+      case 'boost7':
+        this.nextCardBoost += 7;
+        break;
+      case 'boost10':
+        this.nextCardBoost += 10;
+        break;
       case 'xpUp':
         this.xpPerWin += 5;
         result.detail = 'XP per win: ' + this.xpPerWin;
@@ -522,22 +543,6 @@
         this.criticalXpPercent += 25;
         result.detail = 'War XP: ' + this.criticalXpPercent + '%';
         break;
-      default:
-        // Handle per-rank permanent boosts (permBoost_2 .. permBoost_A)
-        if (key.indexOf('permBoost_') === 0) {
-          var targetRank = key.substring('permBoost_'.length);
-          var boostedCards = [];
-          for (var bi = 0; bi < this.p1Hand.length; bi++) {
-            if (this.p1Hand[bi].rank === targetRank) {
-              this.p1Hand[bi].value += 1;
-              boostedCards.push(this.p1Hand[bi]);
-            }
-          }
-          result.boostedCards = boostedCards;
-          result.targetRank = targetRank;
-          result.detail = 'All ' + targetRank + 's permanently +1';
-        }
-        break;
       case 'autoWinWar':
         this.autoWinWar = true;
         break;
@@ -545,7 +550,31 @@
         this.numUpgradeChoices += 1;
         result.detail = 'Choices: ' + this.numUpgradeChoices;
         break;
+      case 'lossXpUp':
+        this.lossXpPercent += 5;
+        result.detail = 'Loss XP: ' + this.lossXpPercent + '%';
+        break;
+      default:
+        // Handle per-rank permanent boosts
+        if (key.indexOf('permBoost2_') === 0) {
+          var targetRank = key.substring('permBoost2_'.length);
+          for (var bi = 0; bi < this.p1Hand.length; bi++) {
+            if (this.p1Hand[bi].rank === targetRank) this.p1Hand[bi].value += 2;
+          }
+          result.detail = 'All ' + targetRank + 's permanently +2';
+        } else if (key.indexOf('permBoost_') === 0) {
+          var targetRank = key.substring('permBoost_'.length);
+          for (var bi = 0; bi < this.p1Hand.length; bi++) {
+            if (this.p1Hand[bi].rank === targetRank) this.p1Hand[bi].value += 1;
+          }
+          result.detail = 'All ' + targetRank + 's permanently +1';
+        }
+        break;
     }
+
+    // Track upgrade history
+    if (!this.upgradeHistory[key]) this.upgradeHistory[key] = 0;
+    this.upgradeHistory[key]++;
 
     return result;
   };
