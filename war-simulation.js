@@ -441,11 +441,11 @@
 
   // --- XP & Upgrade management ---
 
-  /** Add XP. Returns true if leveled up (XP resets). */
+  /** Add XP. Returns true if leveled up (overflow carries into next level). */
   WarGameEngine.prototype.addXP = function (amount) {
     this.xp += amount;
     if (this.xp >= this.xpToLevel) {
-      this.xp = 0;
+      this.xp -= this.xpToLevel;
       return true;
     }
     return false;

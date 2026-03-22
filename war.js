@@ -321,7 +321,7 @@ GameUI.prototype.updateEvalBar = function () {
   // advantage ranges from -1 (all opponent) to +1 (all player)
   var advantage = (p1 - p2) / total;
   // Sigmoid: 1 / (1 + e^(-k*x)), k controls steepness
-  var sigmoid = 1 / (1 + Math.exp(-6 * advantage));
+  var sigmoid = 1 / (1 + Math.exp(-4 * advantage));
   var playerPct = sigmoid * 100;
 
   this.els.evalBarFill.style.height = playerPct + '%';
@@ -506,7 +506,7 @@ GameUI.prototype.playPlayerWarCard = async function () {
 /** Opponent auto-plays one war card on a timer. */
 GameUI.prototype.scheduleOpponentWarCard = function () {
   var self = this;
-  var delay = 0.5 + Math.random() * 0.4;
+  var delay = 0.2 + Math.random() * 0.15;
   this.warOpponentTimer = gsap.delayedCall(delay, function () {
     self.playOpponentWarCard();
   });
@@ -733,11 +733,11 @@ GameUI.prototype.showStolenCard = async function (card) {
   this.syncDecks();
 };
 
-/** Show permanent boost badges on all visible face-up cards. */
+/** Show permanent boost badges on player's visible face-up cards only. */
 GameUI.prototype.showAllPermBoosts = function () {
-  var self = this;
+  var playerRow = this.els.playerCards;
   this.cardElements.forEach(function (el, card) {
-    if (!isFaceDown(el) && card.baseValue !== undefined && card.value > card.baseValue) {
+    if (playerRow.contains(el) && !isFaceDown(el) && card.baseValue !== undefined && card.value > card.baseValue) {
       updateBoostBadge(el, card.value - card.baseValue);
     }
   });
