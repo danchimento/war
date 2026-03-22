@@ -30,12 +30,13 @@
     return deck;
   }
 
-  /** Create a 52-card deck as objects { suit, rank, value }. */
+  /** Create a 52-card deck as objects { suit, rank, value, baseValue }. */
   function createFullDeck() {
     var deck = [];
     for (var s = 0; s < SUITS.length; s++) {
       for (var r = 0; r < RANKS.length; r++) {
-        deck.push({ suit: SUITS[s], rank: RANKS[r], value: RANK_VALUES[RANKS[r]] });
+        var v = RANK_VALUES[RANKS[r]];
+        deck.push({ suit: SUITS[s], rank: RANKS[r], value: v, baseValue: v });
       }
     }
     return deck;

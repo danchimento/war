@@ -58,11 +58,14 @@ function createCardElement(card) {
   return div;
 }
 
-/** Add a boost badge (+N) to a card element */
-function addBoostBadge(cardEl, boostAmount) {
+/** Show or update a boost badge (+N) on a card element. */
+function updateBoostBadge(cardEl, totalBoost) {
+  if (totalBoost <= 0) return;
+  var existing = cardEl.querySelector('.card-boost-badge');
+  if (existing) existing.remove();
   var badge = document.createElement('span');
   badge.className = 'card-boost-badge';
-  badge.textContent = '+' + boostAmount;
+  badge.textContent = '+' + totalBoost;
   cardEl.appendChild(badge);
   gsap.from(badge, { scale: 0, duration: 0.3, ease: 'back.out(2)' });
 }
@@ -219,9 +222,10 @@ function GameUI() {
   // Card element tracking
   this.cardElements = new Map();
   this.roundHadWar = false;
-  this.warTapsRemaining = 0;
   this.autoWinActive = false;
   this.lastPlayerCount = 26;
+  this.warState = null;
+  this.warOpponentTimer = null;
 
   this.els = {
     playerDeckEl: document.getElementById('player-deck'),
@@ -254,9 +258,10 @@ GameUI.prototype.start = function () {
   this.state = UI_STATES.IDLE;
   this.cardElements = new Map();
   this.roundHadWar = false;
-  this.warTapsRemaining = 0;
   this.autoWinActive = false;
   this.lastPlayerCount = 26;
+  this.warState = null;
+  if (this.warOpponentTimer) { this.warOpponentTimer.kill(); this.warOpponentTimer = null; }
 
   this.els.gameoverOverlay.classList.add('hidden');
   this.els.upgradeOverlay.classList.add('hidden');
@@ -371,7 +376,7 @@ GameUI.prototype.updateCombo = function () {
   var combo = this.engine.combo;
   var el = this.els.comboDisplay;
   if (combo >= 2) {
-    el.textContent = '\uD83D\uDD25 x' + combo;
+    el.textContent = 'x' + combo + ' COMBO';
     el.classList.remove('hidden');
     gsap.fromTo(el, { scale: 1.3 }, { scale: 1, duration: 0.25, ease: 'back.out(2)' });
   } else {
@@ -423,7 +428,7 @@ GameUI.prototype.onPlayerTap = async function () {
   if (this.state === UI_STATES.WAITING_FOR_PLAYER) {
     await this.playInitialCards();
   } else if (this.state === UI_STATES.WAR_TAP) {
-    await this.playWarCard();
+    await this.playPlayerWarCard();
   }
 };
 
@@ -449,14 +454,19 @@ GameUI.prototype.playInitialCards = async function () {
 
   // Flip both simultaneously
   await Promise.all([Anim.flipUp(pEl), Anim.flipUp(oEl)]);
+
+  // Show permanent boost badge if applicable
+  if (pCard.value > pCard.baseValue) {
+    updateBoostBadge(pEl, pCard.value - pCard.baseValue);
+  }
   await Anim.delay(0.3);
 
   // Evaluate
   var result = this.engine.evaluate(pCard, oCard);
 
-  // Show boost badge if card was boosted
+  // Show boost badge (combined permanent + temporary)
   if (result.boosted) {
-    addBoostBadge(pEl, result.playerEffective - pCard.value);
+    updateBoostBadge(pEl, result.playerEffective - pCard.baseValue);
     await Anim.delay(0.3);
   }
 
@@ -467,61 +477,99 @@ GameUI.prototype.playInitialCards = async function () {
   }
 };
 
-/** During war: each tap plays one card per side. Last tap (4th) flips reveal cards. */
-GameUI.prototype.playWarCard = async function () {
-  this.state = UI_STATES.ANIMATING;
-  this.warTapsRemaining--;
+/** Player taps to play one of their war cards. */
+GameUI.prototype.playPlayerWarCard = async function () {
+  var ws = this.warState;
+  if (!ws || ws.playerPlayed >= 4) return;
 
-  // Draw from each side
+  this.state = UI_STATES.ANIMATING;
+
   var pCard = this.engine.drawPlayer();
-  var oCard = this.engine.drawOpponent();
-  if (!pCard || !oCard) {
-    // Shouldn't happen since canAffordWar was checked, but handle gracefully
-    var winner = this.engine.forceWarLoss();
-    this.syncDecks();
-    this.endGame(winner);
-    return;
-  }
+  if (!pCard) return;
+
+  ws.playerPlayed++;
+  ws.playerCards.push(pCard);
 
   var pEl = this.makeCardEl(pCard);
-  var oEl = this.makeCardEl(oCard);
-
   this.els.playerCards.appendChild(pEl);
-  this.els.opponentCards.appendChild(oEl);
-
-  await Promise.all([
-    Anim.playCard(pEl, this.els.playerDeckEl),
-    Anim.playCard(oEl, this.els.opponentDeckEl),
-  ]);
-
+  ws.playerEls.push(pEl);
+  await Anim.playCard(pEl, this.els.playerDeckEl);
   this.syncDecks();
 
-  if (this.warTapsRemaining > 0) {
-    // Face-down card placed, wait for next tap
+  if (ws.playerPlayed < 4) {
     this.state = UI_STATES.WAR_TAP;
-  } else {
-    // Reveal: flip the last two cards and evaluate
-    await Promise.all([Anim.flipUp(pEl), Anim.flipUp(oEl)]);
+  }
+
+  this.checkWarComplete();
+};
+
+/** Opponent auto-plays one war card on a timer. */
+GameUI.prototype.scheduleOpponentWarCard = function () {
+  var self = this;
+  var delay = 0.5 + Math.random() * 0.4;
+  this.warOpponentTimer = gsap.delayedCall(delay, function () {
+    self.playOpponentWarCard();
+  });
+};
+
+GameUI.prototype.playOpponentWarCard = async function () {
+  var ws = this.warState;
+  if (!ws || ws.opponentPlayed >= 4) return;
+
+  var oCard = this.engine.drawOpponent();
+  if (!oCard) return;
+
+  ws.opponentPlayed++;
+  ws.opponentCards.push(oCard);
+
+  var oEl = this.makeCardEl(oCard);
+  this.els.opponentCards.appendChild(oEl);
+  ws.opponentEls.push(oEl);
+  await Anim.playCard(oEl, this.els.opponentDeckEl);
+  this.syncDecks();
+
+  if (ws.opponentPlayed < 4) {
+    this.scheduleOpponentWarCard();
+  }
+
+  this.checkWarComplete();
+};
+
+/** When both sides have played all 4 war cards, flip reveal and evaluate. */
+GameUI.prototype.checkWarComplete = async function () {
+  var ws = this.warState;
+  if (!ws || ws.playerPlayed < 4 || ws.opponentPlayed < 4 || ws.resolving) return;
+  ws.resolving = true;
+  this.state = UI_STATES.ANIMATING;
+
+  var pEl = ws.playerEls[3];
+  var oEl = ws.opponentEls[3];
+  var pCard = ws.playerCards[3];
+  var oCard = ws.opponentCards[3];
+
+  await Promise.all([Anim.flipUp(pEl), Anim.flipUp(oEl)]);
+
+  // Show permanent boost badge
+  if (pCard.value > pCard.baseValue) {
+    updateBoostBadge(pEl, pCard.value - pCard.baseValue);
+  }
+  await Anim.delay(0.3);
+
+  var result = this.engine.evaluate(pCard, oCard);
+
+  if (result.boosted) {
+    updateBoostBadge(pEl, result.playerEffective - pCard.baseValue);
     await Anim.delay(0.3);
+  }
 
-    var result = this.engine.evaluate(pCard, oCard);
-
-    // Show boost badge if card was boosted
-    if (result.boosted) {
-      addBoostBadge(pEl, result.playerEffective - pCard.value);
-      await Anim.delay(0.3);
-    }
-
-    // Auto-win override: player wins regardless
-    if (this.autoWinActive) {
-      this.autoWinActive = false;
-      await Anim.resultFlash('AUTO-WIN!', '#f1c40f');
-      await this.resolveWin('player');
-    } else if (result.winner === 'tie') {
-      await this.resolveWar(); // Another war!
-    } else {
-      await this.resolveWin(result.winner);
-    }
+  if (this.autoWinActive) {
+    this.autoWinActive = false;
+    await Anim.resultFlash('AUTO-WIN!', '#f1c40f');
+    await this.resolveWin('player');
+  } else if (result.winner === 'tie') {
+    await this.resolveWar();
+  } else {
+    await this.resolveWin(result.winner);
   }
 };
 
@@ -540,6 +588,9 @@ GameUI.prototype.resolveWin = async function (winner) {
 
   // Flip all face-down cards so player sees what was won
   await Anim.flipAllFaceDown([this.els.playerCards, this.els.opponentCards]);
+
+  // Show permanent boost badges on any boosted cards now visible
+  this.showAllPermBoosts();
   await Anim.delay(0.5);
 
   // Collect all visible card elements to winner's deck
@@ -553,12 +604,13 @@ GameUI.prototype.resolveWin = async function (winner) {
   // Engine handles card redistribution
   this.engine.collectToWinner(winner);
 
-  // XP and combo for player wins
+  // XP and combo for player wins (calc XP before incrementing combo
+  // so first win = base XP, combo bonus starts on 2nd consecutive win)
   if (winner === 'player') {
-    this.engine.combo++;
     var xpGain = this.engine.calcXP(this.roundHadWar);
     this.showXPPopup(xpGain);
     leveledUp = this.engine.addXP(xpGain);
+    this.engine.combo++;
   } else {
     this.engine.combo = 0;
   }
@@ -593,9 +645,19 @@ GameUI.prototype.resolveWar = async function () {
     return;
   }
 
-  // Player taps for each of the 4 war cards (3 face-down + 1 reveal)
-  this.warTapsRemaining = 4;
+  // Independent war flow: opponent auto-plays on timer, player taps
+  if (this.warOpponentTimer) { this.warOpponentTimer.kill(); this.warOpponentTimer = null; }
+  this.warState = {
+    playerPlayed: 0,
+    opponentPlayed: 0,
+    playerCards: [],
+    opponentCards: [],
+    playerEls: [],
+    opponentEls: [],
+    resolving: false,
+  };
   this.state = UI_STATES.WAR_TAP;
+  this.scheduleOpponentWarCard();
 };
 
 // --- XP & Upgrades ---
@@ -669,6 +731,16 @@ GameUI.prototype.showStolenCard = async function (card) {
   await Anim.collectCards([cardEl], this.els.playerDeckEl);
   this.clearBattleZone();
   this.syncDecks();
+};
+
+/** Show permanent boost badges on all visible face-up cards. */
+GameUI.prototype.showAllPermBoosts = function () {
+  var self = this;
+  this.cardElements.forEach(function (el, card) {
+    if (!isFaceDown(el) && card.baseValue !== undefined && card.value > card.baseValue) {
+      updateBoostBadge(el, card.value - card.baseValue);
+    }
+  });
 };
 
 // --- Game Over ---
