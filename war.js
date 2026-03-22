@@ -114,8 +114,10 @@ var Anim = {
     var dy = fromRect.top - toRect.top;
 
     var tl = gsap.timeline();
+    // Start at deck position, move 60% of the way, then flip in the last 40%
     tl.set(cardEl, { x: dx, y: dy })
-      .to(cardEl, { x: dx * 0.5, y: dy * 0.5, scaleX: 0, duration: 0.12, ease: 'power2.in' })
+      .to(cardEl, { x: dx * 0.4, y: dy * 0.4, duration: 0.15, ease: 'power2.out' })
+      .to(cardEl, { x: dx * 0.2, y: dy * 0.2, scaleX: 0, duration: 0.08, ease: 'power1.in' })
       .call(function () { showCardFront(cardEl); })
       .to(cardEl, { x: 0, y: 0, scaleX: 1, duration: 0.12, ease: 'power2.out' });
     return tl;
@@ -147,12 +149,16 @@ var Anim = {
 
   collectCards: function (cardEls, destEl) {
     var destRect = destEl.getBoundingClientRect();
+    var destCX = destRect.left + destRect.width / 2;
+    var destCY = destRect.top + destRect.height / 2;
     var tl = gsap.timeline();
     cardEls.forEach(function (el, i) {
       if (!el || !el.getBoundingClientRect) return;
       var elRect = el.getBoundingClientRect();
+      var elCX = elRect.left + elRect.width / 2;
+      var elCY = elRect.top + elRect.height / 2;
       tl.to(el, {
-        x: destRect.left - elRect.left, y: destRect.top - elRect.top,
+        x: '+=' + (destCX - elCX), y: '+=' + (destCY - elCY),
         scale: 0.7, opacity: 0, duration: 0.2, ease: 'power2.in',
         onComplete: function () { if (el.parentNode) el.remove(); },
       }, i * 0.04);
@@ -634,6 +640,11 @@ GameUI.prototype.resolveWar = async function () {
 GameUI.prototype.checkUpgrade = async function (leveledUp) {
   this.state = UI_STATES.CHECK_UPGRADE;
   this.updateXPBar();
+
+  // Check game over BEFORE showing upgrade — don't interrupt a win
+  var status = this.engine.isGameOver();
+  if (status.over) { this.endGame(status.winner); return; }
+
   if (leveledUp) {
     this.els.xpContainer.classList.add('flash');
     var c = this.els.xpContainer;
@@ -642,7 +653,8 @@ GameUI.prototype.checkUpgrade = async function (leveledUp) {
     await this.showUpgradeChoice();
     this.updateXPBar();
   }
-  var status = this.engine.isGameOver();
+
+  status = this.engine.isGameOver();
   if (status.over) { this.endGame(status.winner); return; }
   this.state = UI_STATES.IDLE;
   this.beginRound();
@@ -711,13 +723,12 @@ GameUI.prototype.showDeckViewer = function () {
 
   for (var i = 0; i < ranks.length; i++) {
     var rank = ranks[i];
-    var baseVal = WS.RANK_VALUES[rank];
     var boost = boosts[rank] || 0;
     var row = document.createElement('div');
     row.className = 'deck-row';
+    var boostClass = boost > 0 ? 'deck-row-boost--active' : 'deck-row-boost--zero';
     row.innerHTML = '<span class="deck-row-rank">' + rank + '</span>' +
-      '<span>' + (baseVal + boost) + '</span>' +
-      (boost > 0 ? '<span class="deck-row-boost">+' + boost + '</span>' : '');
+      '<span class="deck-row-boost ' + boostClass + '">+' + boost + '</span>';
     list.appendChild(row);
   }
   this.els.deckOverlay.classList.remove('hidden');

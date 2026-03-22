@@ -283,14 +283,18 @@ html, body {
 
 .xp-bar-label {
   position: absolute;
-  bottom: 4px;
-  left: 50%;
-  transform: translateX(-50%) rotate(-90deg);
-  font-size: 9px;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 8px;
   font-weight: 700;
   z-index: 2;
   white-space: nowrap;
   text-shadow: 0 1px 3px rgba(0,0,0,.8), 0 0 6px rgba(0,0,0,.5);
+  letter-spacing: 0.5px;
 }
 
 .xp-bar-container.flash {
@@ -595,17 +599,17 @@ html, body {
 /* ========== DECK LIST ========== */
 .deck-list {
   margin-top: 16px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   text-align: left;
 }
 
 .deck-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  gap: 8px;
+  padding: 5px 10px;
   background: rgba(255,255,255,.04);
   border-radius: 6px;
   font-size: 14px;
@@ -620,10 +624,17 @@ html, body {
 }
 
 .deck-row-boost {
-  color: #2ecc71;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
   margin-left: auto;
+}
+
+.deck-row-boost--zero {
+  color: rgba(255,255,255,.25);
+}
+
+.deck-row-boost--active {
+  color: #2ecc71;
 }
 
 /* ========== GAME OVER STATS ========== */
