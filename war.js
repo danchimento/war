@@ -11,11 +11,9 @@ var WS = window.WarSimulation;
 
 var UI_STATES = Object.freeze({
   IDLE: 'IDLE',
-  OPPONENT_PLAYS: 'OPPONENT_PLAYS',
   WAITING_FOR_PLAYER: 'WAITING_FOR_PLAYER',
-  FLIP_PHASE: 'FLIP_PHASE',
-  RESOLVE_WIN: 'RESOLVE_WIN',
-  RESOLVE_WAR: 'RESOLVE_WAR',
+  ANIMATING: 'ANIMATING',
+  WAR_TAP: 'WAR_TAP',
   CHECK_UPGRADE: 'CHECK_UPGRADE',
   UPGRADE_CHOICE: 'UPGRADE_CHOICE',
   GAME_OVER: 'GAME_OVER',
@@ -74,6 +72,11 @@ function showCardBack(el) {
   if (back) back.style.display = '';
 }
 
+function isFaceDown(el) {
+  var back = el.querySelector('.card-back');
+  return back && back.style.display !== 'none';
+}
+
 // ===== DECK VIEW (visual-only, no card data) =====
 
 function DeckView(containerEl) {
@@ -103,9 +106,10 @@ DeckView.prototype.update = function (count) {
 // ===== ANIMATION HELPERS =====
 
 var Anim = {
-  playCard: function (cardEl, fromEl, toEl) {
+  /** Animate card from fromEl position to its current DOM position. */
+  playCard: function (cardEl, fromEl) {
     var fromRect = fromEl.getBoundingClientRect();
-    var toRect = toEl.getBoundingClientRect();
+    var toRect = cardEl.getBoundingClientRect();
     var dx = fromRect.left - toRect.left;
     var dy = fromRect.top - toRect.top;
 
@@ -122,6 +126,24 @@ var Anim = {
     return tl;
   },
 
+  /** Flip all face-down cards in the given containers. */
+  flipAllFaceDown: function (containers) {
+    var cards = [];
+    for (var c = 0; c < containers.length; c++) {
+      var els = containers[c].querySelectorAll('.card');
+      for (var i = 0; i < els.length; i++) {
+        if (isFaceDown(els[i])) cards.push(els[i]);
+      }
+    }
+    if (cards.length === 0) return Promise.resolve();
+
+    var tl = gsap.timeline();
+    for (var i = 0; i < cards.length; i++) {
+      tl.add(Anim.flipUp(cards[i]), i * 0.06);
+    }
+    return tl;
+  },
+
   collectCards: function (cardEls, destEl) {
     var destRect = destEl.getBoundingClientRect();
     var tl = gsap.timeline();
@@ -132,22 +154,14 @@ var Anim = {
       var dx = destRect.left - elRect.left;
       var dy = destRect.top - elRect.top;
 
-      tl.call(function () { showCardBack(el); }, null, i * 0.12);
       tl.to(el, {
         x: dx, y: dy, scale: 0.7, opacity: 0,
         duration: 0.3, ease: 'power2.in',
         onComplete: function () { if (el.parentNode) el.remove(); },
-      }, i * 0.12);
+      }, i * 0.08);
     });
 
     return tl;
-  },
-
-  warSlam: function (cardEl) {
-    return gsap.from(cardEl, {
-      y: -80, scale: 1.3, opacity: 0,
-      duration: 0.25, ease: 'back.out(1.7)',
-    });
   },
 
   resultFlash: function (text, color) {
@@ -174,18 +188,21 @@ function renderStatusBadges(engine, container) {
   if (engine.nextCardBoost > 0) {
     var span = document.createElement('span');
     span.className = 'upgrade-badge';
+    span.dataset.desc = 'Your next card gets +' + engine.nextCardBoost + ' to its value.';
     span.textContent = '\u2B06 +' + engine.nextCardBoost + ' next card';
     container.appendChild(span);
   }
   if (engine.autoWinWar) {
     var span = document.createElement('span');
     span.className = 'upgrade-badge upgrade-badge--epic';
+    span.dataset.desc = 'You will automatically win the next war.';
     span.textContent = '\uD83D\uDC51 Auto-Win War';
     container.appendChild(span);
   }
   if (engine.combo > 0) {
     var span = document.createElement('span');
     span.className = 'upgrade-badge upgrade-badge--combo';
+    span.dataset.desc = 'Consecutive wins! Each combo gives +' + engine.comboXpPercent + '% XP per streak.';
     span.textContent = '\uD83D\uDD25 x' + engine.combo + ' combo';
     container.appendChild(span);
   }
@@ -197,17 +214,16 @@ function GameUI() {
   this.state = UI_STATES.IDLE;
   this.engine = new WS.WarGameEngine();
 
-  // Card element tracking: Map<card object, DOM element>
+  // Card element tracking
   this.cardElements = new Map();
   this.roundHadWar = false;
+  this.warTapsRemaining = 0;
 
   this.els = {
     playerDeckEl: document.getElementById('player-deck'),
     opponentDeckEl: document.getElementById('opponent-deck'),
-    playerBattle: document.getElementById('player-battle'),
-    opponentBattle: document.getElementById('opponent-battle'),
-    warPilePlayer: document.getElementById('war-pile-player'),
-    warPileOpponent: document.getElementById('war-pile-opponent'),
+    playerCards: document.getElementById('player-cards'),
+    opponentCards: document.getElementById('opponent-cards'),
     xpFill: document.getElementById('xp-bar-fill'),
     xpLabel: document.getElementById('xp-bar-label'),
     xpContainer: document.getElementById('xp-bar-container'),
@@ -215,8 +231,8 @@ function GameUI() {
     upgradeChoices: document.getElementById('upgrade-choices'),
     gameoverOverlay: document.getElementById('gameover-overlay'),
     gameoverMessage: document.getElementById('gameover-message'),
-    tapPrompt: document.getElementById('tap-prompt'),
     activeUpgrades: document.getElementById('active-upgrades'),
+    badgeTooltip: document.getElementById('badge-tooltip'),
     restartBtn: document.getElementById('restart-btn'),
   };
 
@@ -231,6 +247,7 @@ GameUI.prototype.start = function () {
   this.state = UI_STATES.IDLE;
   this.cardElements = new Map();
   this.roundHadWar = false;
+  this.warTapsRemaining = 0;
 
   this.els.gameoverOverlay.classList.add('hidden');
   this.els.upgradeOverlay.classList.add('hidden');
@@ -253,6 +270,14 @@ GameUI.prototype.bindEvents = function () {
   this.els.playerDeckEl.addEventListener('touchend', tapHandler);
   this.els.restartBtn.addEventListener('click', function () { self.start(); });
   document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  // Badge tooltip
+  this.els.activeUpgrades.addEventListener('click', function (e) {
+    var badge = e.target.closest('.upgrade-badge');
+    if (badge && badge.dataset.desc) {
+      self.showBadgeTooltip(badge.dataset.desc);
+    }
+  });
 };
 
 // --- Visual sync helpers ---
@@ -285,9 +310,17 @@ GameUI.prototype.getCardEl = function (card) {
   return this.cardElements.get(card) || null;
 };
 
-/** Remove card element tracking. */
-GameUI.prototype.releaseCardEl = function (card) {
-  this.cardElements.delete(card);
+// --- Badge tooltip ---
+
+GameUI.prototype.showBadgeTooltip = function (desc) {
+  var tooltip = this.els.badgeTooltip;
+  tooltip.textContent = desc;
+  tooltip.classList.remove('hidden');
+
+  clearTimeout(this._tooltipTimer);
+  this._tooltipTimer = setTimeout(function () {
+    tooltip.classList.add('hidden');
+  }, 2000);
 };
 
 // --- Turn flow ---
@@ -296,61 +329,45 @@ GameUI.prototype.beginRound = async function () {
   var status = this.engine.isGameOver();
   if (status.over) { this.endGame(status.winner); return; }
 
-  this.state = UI_STATES.OPPONENT_PLAYS;
   this.clearBattleZone();
-
-  // Engine draws opponent card
   this.engine.beginTurn();
-  var oppCard = this.engine.drawOpponent();
-  if (!oppCard) { this.endGame('player'); return; }
-
-  // Animate opponent card face-down to battle slot
-  var oppEl = this.makeCardEl(oppCard);
-  this.els.opponentBattle.appendChild(oppEl);
-  await Anim.playCard(oppEl, this.els.opponentDeckEl, this.els.opponentBattle);
-  this.syncDecks();
-
-  // Wait for player
   this.state = UI_STATES.WAITING_FOR_PLAYER;
-  this.els.tapPrompt.classList.remove('hidden');
 };
 
 GameUI.prototype.onPlayerTap = async function () {
-  if (this.state !== UI_STATES.WAITING_FOR_PLAYER) return;
-  this.state = UI_STATES.FLIP_PHASE;
-  this.els.tapPrompt.classList.add('hidden');
-
-  // Engine draws player card
-  var pCard = this.engine.drawPlayer();
-  if (!pCard) { this.endGame('opponent'); return; }
-
-  // Animate player card face-down to battle slot
-  var pEl = this.makeCardEl(pCard);
-  this.els.playerBattle.appendChild(pEl);
-  await Anim.playCard(pEl, this.els.playerDeckEl, this.els.playerBattle);
-  this.syncDecks();
-
-  // Store the current battle cards for flipAndEvaluate
-  await this.flipAndEvaluate(pCard, this.engine.pot[0].card);
+  if (this.state === UI_STATES.WAITING_FOR_PLAYER) {
+    await this.playInitialCards();
+  } else if (this.state === UI_STATES.WAR_TAP) {
+    await this.playWarCard();
+  }
 };
 
-GameUI.prototype.flipAndEvaluate = async function (playerCard, opponentCard) {
-  this.state = UI_STATES.FLIP_PHASE;
+/** Player taps deck → both sides play a card → flip → evaluate. */
+GameUI.prototype.playInitialCards = async function () {
+  this.state = UI_STATES.ANIMATING;
 
-  var pEl = this.getCardEl(playerCard);
-  var oEl = this.getCardEl(opponentCard);
+  // Draw player card
+  var pCard = this.engine.drawPlayer();
+  if (!pCard) { this.endGame('opponent'); return; }
+  var pEl = this.makeCardEl(pCard);
+  this.els.playerCards.appendChild(pEl);
+  await Anim.playCard(pEl, this.els.playerDeckEl);
+
+  // Draw opponent card
+  var oCard = this.engine.drawOpponent();
+  if (!oCard) { this.endGame('player'); return; }
+  var oEl = this.makeCardEl(oCard);
+  this.els.opponentCards.appendChild(oEl);
+  await Anim.playCard(oEl, this.els.opponentDeckEl);
+
+  this.syncDecks();
 
   // Flip both simultaneously
-  await Promise.all([
-    Anim.flipUp(oEl),
-    Anim.flipUp(pEl),
-  ]);
-
+  await Promise.all([Anim.flipUp(pEl), Anim.flipUp(oEl)]);
   await Anim.delay(0.3);
 
-  // Ask engine to evaluate
-  var result = this.engine.evaluate(playerCard, opponentCard);
-
+  // Evaluate
+  var result = this.engine.evaluate(pCard, oCard);
   if (result.winner === 'tie') {
     await this.resolveWar();
   } else {
@@ -358,19 +375,68 @@ GameUI.prototype.flipAndEvaluate = async function (playerCard, opponentCard) {
   }
 };
 
+/** During war: each tap plays one card per side. Last tap (4th) flips reveal cards. */
+GameUI.prototype.playWarCard = async function () {
+  this.state = UI_STATES.ANIMATING;
+  this.warTapsRemaining--;
+
+  // Draw from each side
+  var pCard = this.engine.drawPlayer();
+  var oCard = this.engine.drawOpponent();
+  if (!pCard || !oCard) {
+    // Shouldn't happen since canAffordWar was checked, but handle gracefully
+    var winner = this.engine.forceWarLoss();
+    this.syncDecks();
+    this.endGame(winner);
+    return;
+  }
+
+  var pEl = this.makeCardEl(pCard);
+  var oEl = this.makeCardEl(oCard);
+
+  this.els.playerCards.appendChild(pEl);
+  this.els.opponentCards.appendChild(oEl);
+
+  await Promise.all([
+    Anim.playCard(pEl, this.els.playerDeckEl),
+    Anim.playCard(oEl, this.els.opponentDeckEl),
+  ]);
+
+  this.syncDecks();
+
+  if (this.warTapsRemaining > 0) {
+    // Face-down card placed, wait for next tap
+    this.state = UI_STATES.WAR_TAP;
+  } else {
+    // Reveal: flip the last two cards and evaluate
+    await Promise.all([Anim.flipUp(pEl), Anim.flipUp(oEl)]);
+    await Anim.delay(0.3);
+
+    var result = this.engine.evaluate(pCard, oCard);
+    if (result.winner === 'tie') {
+      await this.resolveWar(); // Another war!
+    } else {
+      await this.resolveWin(result.winner);
+    }
+  }
+};
+
 GameUI.prototype.resolveWin = async function (winner) {
-  this.state = UI_STATES.RESOLVE_WIN;
+  this.state = UI_STATES.ANIMATING;
   var leveledUp = false;
 
   var label = winner === 'player' ? 'YOU WIN!' : 'YOU LOSE';
   var color = winner === 'player' ? '#2ecc71' : '#e74c3c';
 
-  // Show critical flash for war wins
   if (this.roundHadWar && winner === 'player') {
     label = 'CRITICAL WIN!';
     color = '#f1c40f';
   }
   await Anim.resultFlash(label, color);
+
+  // Flip all face-down cards so player sees what was won
+  await Anim.flipAllFaceDown([this.els.playerCards, this.els.opponentCards]);
+  await Anim.delay(0.5);
 
   // Collect all visible card elements to winner's deck
   var allEls = this.getAllVisibleCardEls();
@@ -403,30 +469,14 @@ GameUI.prototype.resolveWin = async function (winner) {
 };
 
 GameUI.prototype.resolveWar = async function () {
-  this.state = UI_STATES.RESOLVE_WAR;
   this.roundHadWar = true;
 
   // Auto-win war upgrade
   if (this.engine.autoWinWar) {
     this.engine.autoWinWar = false;
     await Anim.resultFlash('AUTO-WIN!', '#f1c40f');
-    this.engine.collectToWinner('player');
     this.renderStatus();
-
-    // Collect visible cards then resolve as player win
-    var allEls = this.getAllVisibleCardEls();
-    if (allEls.length > 0) await Anim.collectCards(allEls, this.els.playerDeckEl);
-    this.cardElements = new Map();
-    this.syncDecks();
-    this.clearBattleZone();
-
-    // Give XP as a war win
-    this.engine.combo++;
-    var xpGain = this.engine.calcXP(true);
-    var leveledUp = this.engine.addXP(xpGain);
-    this.roundHadWar = false;
-    this.renderStatus();
-    await this.checkUpgrade(leveledUp);
+    await this.resolveWin('player');
     return;
   }
 
@@ -434,47 +484,15 @@ GameUI.prototype.resolveWar = async function () {
 
   // Check if both sides can afford war
   if (!this.engine.canAffordWar()) {
-    // Force loss — engine moves all cards to winner
     var winner = this.engine.forceWarLoss();
     this.syncDecks();
     this.endGame(winner);
     return;
   }
 
-  // Engine deals 3 face-down + 1 reveal per side
-  var warCards = this.engine.dealWarCards();
-  this.syncDecks();
-
-  // Animate face-down war cards
-  for (var i = 0; i < 3; i++) {
-    var oCard = warCards.p2FaceDown[i];
-    var oEl = this.makeCardEl(oCard);
-    this.els.warPileOpponent.appendChild(oEl);
-    await Anim.warSlam(oEl);
-
-    var pCard = warCards.p1FaceDown[i];
-    var pEl = this.makeCardEl(pCard);
-    this.els.warPilePlayer.appendChild(pEl);
-    await Anim.warSlam(pEl);
-  }
-
-  await Anim.delay(0.2);
-
-  // Clear battle slots for reveal cards
-  this.els.opponentBattle.innerHTML = '';
-  this.els.playerBattle.innerHTML = '';
-
-  // Animate reveal cards
-  var oppRevealEl = this.makeCardEl(warCards.p2Reveal);
-  this.els.opponentBattle.appendChild(oppRevealEl);
-  await Anim.playCard(oppRevealEl, this.els.opponentDeckEl, this.els.opponentBattle);
-
-  var pRevealEl = this.makeCardEl(warCards.p1Reveal);
-  this.els.playerBattle.appendChild(pRevealEl);
-  await Anim.playCard(pRevealEl, this.els.playerDeckEl, this.els.playerBattle);
-
-  // Flip and evaluate the reveal cards (may recurse if another tie)
-  await this.flipAndEvaluate(warCards.p1Reveal, warCards.p2Reveal);
+  // Player taps for each of the 4 war cards (3 face-down + 1 reveal)
+  this.warTapsRemaining = 4;
+  this.state = UI_STATES.WAR_TAP;
 };
 
 // --- XP & Upgrades ---
@@ -484,7 +502,6 @@ GameUI.prototype.checkUpgrade = async function (leveledUp) {
   this.updateXPBar();
 
   if (leveledUp) {
-    // Flash XP bar
     this.els.xpContainer.classList.add('flash');
     var xpContainer = this.els.xpContainer;
     setTimeout(function () { xpContainer.classList.remove('flash'); }, 600);
@@ -531,7 +548,6 @@ GameUI.prototype.showUpgradeChoice = function () {
 
 GameUI.prototype.endGame = function (winner) {
   this.state = UI_STATES.GAME_OVER;
-  this.els.tapPrompt.classList.add('hidden');
   this.els.gameoverMessage.textContent = winner === 'player' ? 'You Win!' : 'You Lose!';
   this.els.gameoverMessage.style.color = winner === 'player' ? '#2ecc71' : '#e74c3c';
   this.els.gameoverOverlay.classList.remove('hidden');
@@ -540,10 +556,8 @@ GameUI.prototype.endGame = function (winner) {
 // --- Helpers ---
 
 GameUI.prototype.clearBattleZone = function () {
-  this.els.opponentBattle.innerHTML = '';
-  this.els.playerBattle.innerHTML = '';
-  this.els.warPileOpponent.innerHTML = '';
-  this.els.warPilePlayer.innerHTML = '';
+  this.els.playerCards.innerHTML = '';
+  this.els.opponentCards.innerHTML = '';
 };
 
 GameUI.prototype.getAllVisibleCardEls = function () {
