@@ -92,12 +92,28 @@
     { key: 'comboXpUp', name: 'Combo XP Up',   desc: 'Permanently increase combo XP bonus by +5%', rarity: 'common', icon: '\uD83D\uDD25' },
     // Rare
     { key: 'stealCard', name: 'Steal Card',    desc: 'Steal a random card from the opponent',      rarity: 'rare',   icon: '\uD83E\uDD1A' },
-    { key: 'permBoost', name: 'Empower Card',  desc: 'Permanently give +1 value to a random card', rarity: 'rare',   icon: '\uD83D\uDC8E' },
     { key: 'critXpUp',  name: 'Crit XP Up',    desc: 'Permanently increase War XP bonus by +25%',  rarity: 'rare',   icon: '\u26A1' },
-    // Epic
-    { key: 'autoWinWar',  name: 'Auto-Win War',  desc: 'Automatically win the next war',           rarity: 'epic',   icon: '\uD83D\uDC51' },
-    { key: 'moreChoices', name: 'More Choices',   desc: 'Permanently get +1 upgrade choice',       rarity: 'epic',   icon: '\uD83C\uDFB0' },
   ];
+
+  // Generate per-rank permanent upgrade cards (all rare)
+  for (var ri = 0; ri < RANKS.length; ri++) {
+    (function (rank, val) {
+      UPGRADE_CATALOG.push({
+        key: 'permBoost_' + rank,
+        name: 'Empower ' + rank,
+        desc: 'Permanently improve the value of all ' + rank + 's by 1',
+        rarity: 'rare',
+        icon: '\uD83D\uDC8E',
+        targetRank: rank,
+      });
+    })(RANKS[ri], RANK_VALUES[RANKS[ri]]);
+  }
+
+  // Epic
+  UPGRADE_CATALOG.push(
+    { key: 'autoWinWar',  name: 'Auto-Win War',  desc: 'Automatically win the next war',           rarity: 'epic',   icon: '\uD83D\uDC51' },
+    { key: 'moreChoices', name: 'More Choices',   desc: 'Permanently get +1 upgrade choice',       rarity: 'epic',   icon: '\uD83C\uDFB0' }
+  );
 
   // ===== HEADLESS SIMULATION =====
 
@@ -428,7 +444,7 @@
   WarGameEngine.prototype.addXP = function (amount) {
     this.xp += amount;
     if (this.xp >= this.xpToLevel) {
-      this.xp -= this.xpToLevel;
+      this.xp = 0;
       return true;
     }
     return false;
@@ -501,17 +517,25 @@
           result.detail = 'Stole ' + stolen.rank + ' of ' + stolen.suit;
         }
         break;
-      case 'permBoost':
-        if (this.p1Hand.length > 0) {
-          var idx = Math.floor(Math.random() * this.p1Hand.length);
-          this.p1Hand[idx].value += 1;
-          result.boostedCard = this.p1Hand[idx];
-          result.detail = this.p1Hand[idx].rank + ' of ' + this.p1Hand[idx].suit + ' now has value ' + this.p1Hand[idx].value;
-        }
-        break;
       case 'critXpUp':
         this.criticalXpPercent += 25;
         result.detail = 'War XP: ' + this.criticalXpPercent + '%';
+        break;
+      default:
+        // Handle per-rank permanent boosts (permBoost_2 .. permBoost_A)
+        if (key.indexOf('permBoost_') === 0) {
+          var targetRank = key.substring('permBoost_'.length);
+          var boostedCards = [];
+          for (var bi = 0; bi < this.p1Hand.length; bi++) {
+            if (this.p1Hand[bi].rank === targetRank) {
+              this.p1Hand[bi].value += 1;
+              boostedCards.push(this.p1Hand[bi]);
+            }
+          }
+          result.boostedCards = boostedCards;
+          result.targetRank = targetRank;
+          result.detail = 'All ' + targetRank + 's permanently +1';
+        }
         break;
       case 'autoWinWar':
         this.autoWinWar = true;

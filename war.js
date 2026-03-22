@@ -58,6 +58,15 @@ function createCardElement(card) {
   return div;
 }
 
+/** Add a boost badge (+N) to a card element */
+function addBoostBadge(cardEl, boostAmount) {
+  var badge = document.createElement('span');
+  badge.className = 'card-boost-badge';
+  badge.textContent = '+' + boostAmount;
+  cardEl.appendChild(badge);
+  gsap.from(badge, { scale: 0, duration: 0.3, ease: 'back.out(2)' });
+}
+
 function showCardFront(el) {
   var front = el.querySelector('.card-front');
   var back = el.querySelector('.card-back');
@@ -234,6 +243,7 @@ function GameUI() {
     activeUpgrades: document.getElementById('active-upgrades'),
     badgeTooltip: document.getElementById('badge-tooltip'),
     restartBtn: document.getElementById('restart-btn'),
+    evalBarFill: document.getElementById('eval-bar-fill'),
   };
 
   this.playerDeckView = new DeckView(this.els.playerDeckEl);
@@ -256,6 +266,7 @@ GameUI.prototype.start = function () {
   this.engine.setup();
   this.syncDecks();
   this.updateXPBar();
+  this.updateEvalBar();
   this.renderStatus();
   this.beginRound();
 };
@@ -285,6 +296,7 @@ GameUI.prototype.bindEvents = function () {
 GameUI.prototype.syncDecks = function () {
   this.playerDeckView.update(this.engine.getP1Count());
   this.opponentDeckView.update(this.engine.getP2Count());
+  this.updateEvalBar();
 };
 
 GameUI.prototype.updateXPBar = function () {
@@ -292,6 +304,28 @@ GameUI.prototype.updateXPBar = function () {
   var pct = Math.min(100, progress.percentage);
   this.els.xpFill.style.width = pct + '%';
   this.els.xpLabel.textContent = 'XP: ' + progress.current + ' / ' + progress.needed;
+};
+
+GameUI.prototype.updateEvalBar = function () {
+  var p1 = this.engine.getP1Count();
+  var p2 = this.engine.getP2Count();
+  var total = p1 + p2;
+  if (total === 0) return;
+  // Fill represents player's share, growing from bottom
+  var playerPct = (p1 / total) * 100;
+  this.els.evalBarFill.style.height = playerPct + '%';
+};
+
+GameUI.prototype.showXPPopup = function (amount) {
+  var popup = document.createElement('div');
+  popup.className = 'xp-popup';
+  popup.textContent = '+' + amount + ' XP';
+  this.els.xpContainer.appendChild(popup);
+
+  gsap.fromTo(popup,
+    { opacity: 1, y: 0 },
+    { opacity: 0, y: -30, duration: 1, ease: 'power2.out', onComplete: function () { popup.remove(); } }
+  );
 };
 
 GameUI.prototype.renderStatus = function () {
@@ -368,6 +402,13 @@ GameUI.prototype.playInitialCards = async function () {
 
   // Evaluate
   var result = this.engine.evaluate(pCard, oCard);
+
+  // Show boost badge if card was boosted
+  if (result.boosted) {
+    addBoostBadge(pEl, result.playerEffective - pCard.value);
+    await Anim.delay(0.3);
+  }
+
   if (result.winner === 'tie') {
     await this.resolveWar();
   } else {
@@ -413,6 +454,13 @@ GameUI.prototype.playWarCard = async function () {
     await Anim.delay(0.3);
 
     var result = this.engine.evaluate(pCard, oCard);
+
+    // Show boost badge if card was boosted
+    if (result.boosted) {
+      addBoostBadge(pEl, result.playerEffective - pCard.value);
+      await Anim.delay(0.3);
+    }
+
     if (result.winner === 'tie') {
       await this.resolveWar(); // Another war!
     } else {
@@ -453,6 +501,7 @@ GameUI.prototype.resolveWin = async function (winner) {
   if (winner === 'player') {
     this.engine.combo++;
     var xpGain = this.engine.calcXP(this.roundHadWar);
+    this.showXPPopup(xpGain);
     leveledUp = this.engine.addXP(xpGain);
   } else {
     this.engine.combo = 0;
@@ -531,17 +580,41 @@ GameUI.prototype.showUpgradeChoice = function () {
       div.innerHTML = '<div class="upgrade-rarity-tag">' + ch.rarity.toUpperCase() + '</div>' +
         '<h3>' + ch.icon + ' ' + ch.name + '</h3><p>' + ch.desc + '</p>';
       div.addEventListener('click', function () {
-        self.engine.activateUpgrade(ch.key);
+        var result = self.engine.activateUpgrade(ch.key);
         self.renderStatus();
         self.syncDecks();
         self.els.upgradeOverlay.classList.add('hidden');
-        resolve();
+
+        // Show stolen card before resolving
+        if (result && result.stolenCard) {
+          self.showStolenCard(result.stolenCard).then(resolve);
+        } else {
+          resolve();
+        }
       });
       self.els.upgradeChoices.appendChild(div);
     });
 
     self.els.upgradeOverlay.classList.remove('hidden');
   });
+};
+
+/** Show stolen card in the battle zone, then animate it to the player's deck. */
+GameUI.prototype.showStolenCard = async function (card) {
+  var cardEl = createCardElement(card);
+  this.els.playerCards.appendChild(cardEl);
+  showCardFront(cardEl);
+
+  // Scale in from center
+  gsap.set(cardEl, { scale: 0 });
+  await gsap.to(cardEl, { scale: 1.2, duration: 0.3, ease: 'back.out(2)' });
+  await Anim.resultFlash('STOLEN!', '#3498db');
+  await Anim.delay(0.5);
+
+  // Animate to player's deck
+  await Anim.collectCards([cardEl], this.els.playerDeckEl);
+  this.clearBattleZone();
+  this.syncDecks();
 };
 
 // --- Game Over ---
