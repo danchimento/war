@@ -588,9 +588,6 @@ GameUI.prototype.resolveWin = async function (winner) {
 
   // Flip all face-down cards so player sees what was won
   await Anim.flipAllFaceDown([this.els.playerCards, this.els.opponentCards]);
-
-  // Show permanent boost badges on any boosted cards now visible
-  this.showAllPermBoosts();
   await Anim.delay(0.5);
 
   // Collect all visible card elements to winner's deck
@@ -731,16 +728,6 @@ GameUI.prototype.showStolenCard = async function (card) {
   await Anim.collectCards([cardEl], this.els.playerDeckEl);
   this.clearBattleZone();
   this.syncDecks();
-};
-
-/** Show permanent boost badges on player's visible face-up cards only. */
-GameUI.prototype.showAllPermBoosts = function () {
-  var playerRow = this.els.playerCards;
-  this.cardElements.forEach(function (el, card) {
-    if (playerRow.contains(el) && !isFaceDown(el) && card.baseValue !== undefined && card.value > card.baseValue) {
-      updateBoostBadge(el, card.value - card.baseValue);
-    }
-  });
 };
 
 // --- Game Over ---
