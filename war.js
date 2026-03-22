@@ -208,13 +208,6 @@ function renderStatusBadges(engine, container) {
     span.textContent = '\uD83D\uDC51 Auto-Win War';
     container.appendChild(span);
   }
-  if (engine.combo > 0) {
-    var span = document.createElement('span');
-    span.className = 'upgrade-badge upgrade-badge--combo';
-    span.dataset.desc = 'Consecutive wins! Each combo gives +' + engine.comboXpPercent + '% XP per streak.';
-    span.textContent = '\uD83D\uDD25 x' + engine.combo + ' combo';
-    container.appendChild(span);
-  }
 }
 
 // ===== GAME UI =====
@@ -227,6 +220,8 @@ function GameUI() {
   this.cardElements = new Map();
   this.roundHadWar = false;
   this.warTapsRemaining = 0;
+  this.autoWinActive = false;
+  this.lastPlayerCount = 26;
 
   this.els = {
     playerDeckEl: document.getElementById('player-deck'),
@@ -244,6 +239,8 @@ function GameUI() {
     badgeTooltip: document.getElementById('badge-tooltip'),
     restartBtn: document.getElementById('restart-btn'),
     evalBarFill: document.getElementById('eval-bar-fill'),
+    evalBar: document.getElementById('eval-bar'),
+    comboDisplay: document.getElementById('combo-display'),
   };
 
   this.playerDeckView = new DeckView(this.els.playerDeckEl);
@@ -258,10 +255,13 @@ GameUI.prototype.start = function () {
   this.cardElements = new Map();
   this.roundHadWar = false;
   this.warTapsRemaining = 0;
+  this.autoWinActive = false;
+  this.lastPlayerCount = 26;
 
   this.els.gameoverOverlay.classList.add('hidden');
   this.els.upgradeOverlay.classList.add('hidden');
   this.clearBattleZone();
+  this.hideCombo();
 
   this.engine.setup();
   this.syncDecks();
@@ -311,25 +311,76 @@ GameUI.prototype.updateEvalBar = function () {
   var p2 = this.engine.getP2Count();
   var total = p1 + p2;
   if (total === 0) return;
-  // Fill represents player's share, growing from bottom
-  var playerPct = (p1 / total) * 100;
+
+  // Sigmoid scaling: stretch differences near the middle, compress extremes
+  // advantage ranges from -1 (all opponent) to +1 (all player)
+  var advantage = (p1 - p2) / total;
+  // Sigmoid: 1 / (1 + e^(-k*x)), k controls steepness
+  var sigmoid = 1 / (1 + Math.exp(-6 * advantage));
+  var playerPct = sigmoid * 100;
+
   this.els.evalBarFill.style.height = playerPct + '%';
+
+  // Show +N/-N popup when card count changes
+  var delta = p1 - this.lastPlayerCount;
+  if (delta !== 0 && this.lastPlayerCount !== undefined) {
+    this.showEvalPopup(delta);
+  }
+  this.lastPlayerCount = p1;
 };
 
-GameUI.prototype.showXPPopup = function (amount) {
+GameUI.prototype.showEvalPopup = function (delta) {
+  var barRect = this.els.evalBar.getBoundingClientRect();
   var popup = document.createElement('div');
-  popup.className = 'xp-popup';
-  popup.textContent = '+' + amount + ' XP';
-  this.els.xpContainer.appendChild(popup);
+  popup.className = 'eval-bar-popup';
+  popup.textContent = (delta > 0 ? '+' : '') + delta;
+  popup.style.color = delta > 0 ? 'rgba(46,204,113,.9)' : 'rgba(231,76,60,.9)';
+  popup.style.left = (barRect.right + 4) + 'px';
+  popup.style.top = (barRect.top + barRect.height / 2) + 'px';
+  document.body.appendChild(popup);
 
   gsap.fromTo(popup,
     { opacity: 1, y: 0 },
-    { opacity: 0, y: -30, duration: 1, ease: 'power2.out', onComplete: function () { popup.remove(); } }
+    { opacity: 0, y: delta > 0 ? -20 : 20, duration: 1, ease: 'power2.out', onComplete: function () { popup.remove(); } }
+  );
+};
+
+GameUI.prototype.showXPPopup = function (amount) {
+  var rect = this.els.xpContainer.getBoundingClientRect();
+  var popup = document.createElement('div');
+  popup.className = 'xp-popup';
+  popup.textContent = '+' + amount + ' XP';
+  document.body.appendChild(popup);
+
+  // Position above the XP bar center
+  popup.style.left = (rect.left + rect.width / 2) + 'px';
+  popup.style.top = rect.top + 'px';
+
+  gsap.fromTo(popup,
+    { opacity: 1, y: 0 },
+    { opacity: 0, y: -30, duration: 1.2, ease: 'power2.out', onComplete: function () { popup.remove(); } }
   );
 };
 
 GameUI.prototype.renderStatus = function () {
   renderStatusBadges(this.engine, this.els.activeUpgrades);
+  this.updateCombo();
+};
+
+GameUI.prototype.updateCombo = function () {
+  var combo = this.engine.combo;
+  var el = this.els.comboDisplay;
+  if (combo >= 2) {
+    el.textContent = '\uD83D\uDD25 x' + combo;
+    el.classList.remove('hidden');
+    gsap.fromTo(el, { scale: 1.3 }, { scale: 1, duration: 0.25, ease: 'back.out(2)' });
+  } else {
+    el.classList.add('hidden');
+  }
+};
+
+GameUI.prototype.hideCombo = function () {
+  this.els.comboDisplay.classList.add('hidden');
 };
 
 /** Create a card DOM element and track it. */
@@ -461,7 +512,12 @@ GameUI.prototype.playWarCard = async function () {
       await Anim.delay(0.3);
     }
 
-    if (result.winner === 'tie') {
+    // Auto-win override: player wins regardless
+    if (this.autoWinActive) {
+      this.autoWinActive = false;
+      await Anim.resultFlash('AUTO-WIN!', '#f1c40f');
+      await this.resolveWin('player');
+    } else if (result.winner === 'tie') {
       await this.resolveWar(); // Another war!
     } else {
       await this.resolveWin(result.winner);
@@ -520,13 +576,11 @@ GameUI.prototype.resolveWin = async function (winner) {
 GameUI.prototype.resolveWar = async function () {
   this.roundHadWar = true;
 
-  // Auto-win war upgrade
+  // Set auto-win flag if active (war still plays out visually)
   if (this.engine.autoWinWar) {
+    this.autoWinActive = true;
     this.engine.autoWinWar = false;
-    await Anim.resultFlash('AUTO-WIN!', '#f1c40f');
     this.renderStatus();
-    await this.resolveWin('player');
-    return;
   }
 
   await Anim.resultFlash('WAR!', '#f1c40f');

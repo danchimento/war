@@ -95,14 +95,14 @@
     { key: 'critXpUp',  name: 'Crit XP Up',    desc: 'Permanently increase War XP bonus by +25%',  rarity: 'rare',   icon: '\u26A1' },
   ];
 
-  // Generate per-rank permanent upgrade cards (all rare)
+  // Generate per-rank permanent upgrade cards (all common)
   for (var ri = 0; ri < RANKS.length; ri++) {
     (function (rank, val) {
       UPGRADE_CATALOG.push({
         key: 'permBoost_' + rank,
         name: 'Empower ' + rank,
         desc: 'Permanently improve the value of all ' + rank + 's by 1',
-        rarity: 'rare',
+        rarity: 'common',
         icon: '\uD83D\uDC8E',
         targetRank: rank,
       });
