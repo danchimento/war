@@ -16,7 +16,7 @@ var UI_STATES = Object.freeze({
 
 // ===== CARD DOM HELPERS =====
 
-function createCardElement(card) {
+function createCardElement(card, deckDef) {
   var div = document.createElement('div');
   div.className = 'card';
   div.dataset.suit = card.suit;
@@ -27,17 +27,29 @@ function createCardElement(card) {
   front.className = 'card-front';
   front.style.display = 'none';
 
+  // Determine display text and center symbol from deck definition
+  var rankText = card.rank;
+  var centerText = WS.SUIT_SYMBOLS[card.suit] || '';
+  if (deckDef) {
+    if (deckDef.rankDisplay && deckDef.rankDisplay[card.rank]) {
+      rankText = deckDef.rankDisplay[card.rank];
+    }
+    if (deckDef.centerSymbol === 'rank' && deckDef.rankSymbols && deckDef.rankSymbols[card.rank]) {
+      centerText = deckDef.rankSymbols[card.rank];
+    }
+  }
+
   var rankTop = document.createElement('span');
   rankTop.className = 'rank';
-  rankTop.textContent = card.rank;
+  rankTop.textContent = rankText;
 
   var suitCenter = document.createElement('span');
   suitCenter.className = 'suit';
-  suitCenter.textContent = WS.SUIT_SYMBOLS[card.suit];
+  suitCenter.textContent = centerText;
 
   var rankBottom = document.createElement('span');
   rankBottom.className = 'rank-bottom';
-  rankBottom.textContent = card.rank;
+  rankBottom.textContent = rankText;
 
   front.appendChild(rankTop);
   front.appendChild(suitCenter);
@@ -271,12 +283,11 @@ function GameUI() {
   this.start();
 }
 
-GameUI.prototype.start = function () {
+GameUI.prototype.start = function (deckId) {
   this.state = UI_STATES.IDLE;
   this.cardElements = new Map();
   this.roundHadWar = false;
   this.autoWinActive = false;
-  this.lastPlayerCount = 26;
   this.warState = null;
   this.prevCombo = 0;
   if (this.warOpponentTimer) { this.warOpponentTimer.kill(); this.warOpponentTimer = null; }
@@ -287,7 +298,8 @@ GameUI.prototype.start = function () {
   this.clearBattleZone();
   this.hideCombo();
 
-  this.engine.setup();
+  this.engine.setup(deckId);
+  this.lastPlayerCount = this.engine.getP1Count();
   this.syncDecks();
   this.updateXPBar();
   this.updateEvalBar();
@@ -418,7 +430,7 @@ GameUI.prototype.comboRing = function () {
 GameUI.prototype.hideCombo = function () { this.els.comboDisplay.classList.add('hidden'); };
 
 GameUI.prototype.makeCardEl = function (card) {
-  var el = createCardElement(card);
+  var el = createCardElement(card, this.engine.activeDeck);
   this.cardElements.set(card, el);
   return el;
 };
@@ -707,7 +719,7 @@ GameUI.prototype.showUpgradeChoice = function () {
 };
 
 GameUI.prototype.showStolenCard = async function (card) {
-  var cardEl = createCardElement(card);
+  var cardEl = createCardElement(card, this.engine.activeDeck);
   this.els.playerCards.appendChild(cardEl);
   showCardFront(cardEl);
   gsap.set(cardEl, { scale: 0 });
@@ -722,21 +734,43 @@ GameUI.prototype.showStolenCard = async function (card) {
 // --- Deck Viewer ---
 
 GameUI.prototype.showDeckViewer = function () {
-  var ranks = WS.RANKS.slice().reverse();
+  var self = this;
+  var deckDef = this.engine.activeDeck;
+  var ranks = deckDef.ranks.slice().reverse();
   var boosts = this.engine.rankBoosts;
   var list = this.els.deckList;
   list.innerHTML = '';
 
   for (var i = 0; i < ranks.length; i++) {
     var rank = ranks[i];
+    var displayRank = (deckDef.rankDisplay && deckDef.rankDisplay[rank]) || rank;
     var boost = boosts[rank] || 0;
     var row = document.createElement('div');
     row.className = 'deck-row';
     var boostClass = boost > 0 ? 'deck-row-boost--active' : 'deck-row-boost--zero';
-    row.innerHTML = '<span class="deck-row-rank">' + rank + '</span>' +
+    row.innerHTML = '<span class="deck-row-rank">' + displayRank + '</span>' +
       '<span class="deck-row-boost ' + boostClass + '">+' + boost + '</span>';
     list.appendChild(row);
   }
+
+  // Deck switcher
+  var deckSwitcher = document.createElement('div');
+  deckSwitcher.className = 'theme-switcher';
+  deckSwitcher.innerHTML = '<span class="theme-switcher-label">Deck</span>';
+  var deckIds = Object.keys(WS.DECKS);
+  deckIds.forEach(function (did) {
+    var d = WS.DECKS[did];
+    var btn = document.createElement('button');
+    btn.className = 'deck-switch-btn' + (self.engine.activeDeckId === did ? ' active' : '');
+    btn.textContent = d.name;
+    btn.addEventListener('click', function () {
+      if (self.engine.activeDeckId === did) return;
+      self.els.deckOverlay.classList.add('hidden');
+      self.start(did);
+    });
+    deckSwitcher.appendChild(btn);
+  });
+  list.appendChild(deckSwitcher);
 
   // Theme switcher
   var currentTheme = document.documentElement.getAttribute('data-theme') || 'default';
@@ -755,7 +789,6 @@ GameUI.prototype.showDeckViewer = function () {
       if (t.id === 'default') document.documentElement.removeAttribute('data-theme');
       else document.documentElement.setAttribute('data-theme', t.id);
       try { localStorage.setItem('war-theme', t.id); } catch (e) {}
-      // Update active state
       switcher.querySelectorAll('.theme-btn').forEach(function (b) { b.classList.remove('active'); });
       btn.classList.add('active');
     });

@@ -7,21 +7,66 @@
 ;(function (exports) {
   'use strict';
 
-  // ===== CONSTANTS =====
+  // ===== DECK DEFINITIONS =====
 
   var SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
-  var RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-  var RANK_VALUES = {
-    '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8,
-    '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14
-  };
   var SUIT_SYMBOLS = {
-    hearts: '\u2665', diamonds: '\u2666', clubs: '\u2663', spades: '\u2660'
+    hearts: '\u2665', diamonds: '\u2666', clubs: '\u2663', spades: '\u2660', none: '\u2605'
+  };
+
+  var DECKS = {
+    standard: {
+      id: 'standard',
+      name: 'Standard',
+      suits: SUITS,
+      ranks: ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'],
+      rankValues: {
+        '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8,
+        '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14
+      },
+      rankDisplay: null,
+      centerSymbol: 'suit',
+      rankSymbols: null,
+      specialCards: null,
+    },
+    chess: {
+      id: 'chess',
+      name: 'Chess',
+      suits: SUITS,
+      ranks: ['Pawn', 'Knight', 'Bishop', 'Rook', 'Queen', 'King', 'Wizard'],
+      rankValues: { Pawn: 1, Knight: 2, Bishop: 3, Rook: 4, Queen: 5, King: 6, Wizard: 7 },
+      rankDisplay: { Pawn: 'P', Knight: 'N', Bishop: 'B', Rook: 'R', Queen: 'Q', King: 'K', Wizard: 'W' },
+      centerSymbol: 'rank',
+      rankSymbols: {
+        Pawn: '\u265F', Knight: '\u265E', Bishop: '\u265D',
+        Rook: '\u265C', Queen: '\u265B', King: '\u265A', Wizard: '\u2605'
+      },
+      specialCards: { Wizard: { count: 2, suit: 'none' } },
+    },
   };
 
   // ===== BASIC FUNCTIONS =====
 
-  /** Create a 52-card deck as plain integers (2–14, four of each). */
+  function createDeckCards(deckDef) {
+    var deck = [];
+    for (var r = 0; r < deckDef.ranks.length; r++) {
+      var rank = deckDef.ranks[r];
+      var val = deckDef.rankValues[rank];
+      var special = deckDef.specialCards && deckDef.specialCards[rank];
+      if (special) {
+        for (var i = 0; i < special.count; i++) {
+          deck.push({ suit: special.suit || 'none', rank: rank, value: val, baseValue: val });
+        }
+      } else {
+        for (var s = 0; s < deckDef.suits.length; s++) {
+          deck.push({ suit: deckDef.suits[s], rank: rank, value: val, baseValue: val });
+        }
+      }
+    }
+    return deck;
+  }
+
+  /** Create a 52-card standard deck as plain integers (for headless sim). */
   function createDeck() {
     var deck = [];
     for (var rank = 2; rank <= 14; rank++) {
@@ -30,19 +75,11 @@
     return deck;
   }
 
-  /** Create a 52-card deck as objects { suit, rank, value, baseValue }. */
+  /** Create standard full deck (backwards compat). */
   function createFullDeck() {
-    var deck = [];
-    for (var s = 0; s < SUITS.length; s++) {
-      for (var r = 0; r < RANKS.length; r++) {
-        var v = RANK_VALUES[RANKS[r]];
-        deck.push({ suit: SUITS[s], rank: RANKS[r], value: v, baseValue: v });
-      }
-    }
-    return deck;
+    return createDeckCards(DECKS.standard);
   }
 
-  /** Fisher-Yates in-place shuffle. Returns the array for chaining. */
   function shuffle(arr) {
     for (var i = arr.length - 1; i > 0; i--) {
       var j = Math.floor(Math.random() * (i + 1));
@@ -51,7 +88,6 @@
     return arr;
   }
 
-  /** Return the numeric value of a card (works for both integers and objects). */
   function cardValue(card) {
     if (typeof card === 'number') return card;
     return card.value;
@@ -74,7 +110,7 @@
     return Math.sqrt(sum / arr.length);
   }
 
-  // ===== UPGRADE CATALOG (rarity-based) =====
+  // ===== UPGRADE CATALOG =====
 
   var RARITY_WEIGHTS = { common: 70, rare: 20, epic: 10 };
 
@@ -85,47 +121,52 @@
     return 'common';
   }
 
-  var UPGRADE_CATALOG = [
-    // Common
+  /** Base upgrades that are deck-independent. */
+  var BASE_UPGRADES = [
     { key: 'boost3',    name: '+3 Value',      desc: '+3 to your next card',                       rarity: 'common', icon: '\u2B06' },
     { key: 'boost5',    name: '+5 Value',      desc: '+5 to your next card',                       rarity: 'common', icon: '\u23EB' },
     { key: 'boost7',    name: '+7 Value',      desc: '+7 to your next card',                       rarity: 'common', icon: '\u23EB' },
     { key: 'boost10',   name: '+10 Value',     desc: '+10 to your next card',                      rarity: 'common', icon: '\u23EB' },
     { key: 'xpUp',      name: 'XP Up',         desc: 'Permanently gain +5 XP per win',             rarity: 'common', icon: '\u2B50' },
     { key: 'comboXpUp', name: 'Combo XP Up',   desc: 'Permanently increase combo XP bonus by +5%', rarity: 'common', icon: '\uD83D\uDD25' },
-    // Rare
     { key: 'stealCard', name: 'Steal Card',    desc: 'Steal a random card from the opponent',      rarity: 'rare',   icon: '\uD83E\uDD1A' },
     { key: 'critXpUp',  name: 'Crit XP Up',    desc: 'Permanently increase War XP bonus by +25%',  rarity: 'rare',   icon: '\u26A1' },
+    { key: 'autoWinWar',  name: 'Auto-Win War',  desc: 'Automatically win the next war',             rarity: 'epic',   icon: '\uD83D\uDC51' },
+    { key: 'moreChoices', name: 'More Choices',   desc: 'Permanently get +1 upgrade choice',         rarity: 'epic',   icon: '\uD83C\uDFB0' },
+    { key: 'lossXpUp',    name: 'Consolation XP', desc: 'Gain 10% of base XP when losing a battle', rarity: 'epic',   icon: '\uD83D\uDEE1' },
   ];
 
-  // Generate per-rank permanent upgrade cards (+1 common, +2 rare)
-  for (var ri = 0; ri < RANKS.length; ri++) {
-    (function (rank) {
-      UPGRADE_CATALOG.push({
+  /** Build the full upgrade catalog for a given deck definition. */
+  function buildUpgradeCatalog(deckDef) {
+    var catalog = BASE_UPGRADES.slice();
+    var displayName = function (rank) {
+      return (deckDef.rankDisplay && deckDef.rankDisplay[rank]) || rank;
+    };
+    for (var r = 0; r < deckDef.ranks.length; r++) {
+      var rank = deckDef.ranks[r];
+      var dn = displayName(rank);
+      catalog.push({
         key: 'permBoost_' + rank,
-        name: 'Empower ' + rank,
+        name: 'Empower ' + dn,
         desc: 'Permanently improve the value of all ' + rank + 's by 1',
         rarity: 'common',
         icon: '\uD83D\uDC8E',
         targetRank: rank,
       });
-      UPGRADE_CATALOG.push({
+      catalog.push({
         key: 'permBoost2_' + rank,
-        name: 'Supercharge ' + rank,
+        name: 'Supercharge ' + dn,
         desc: 'Permanently improve the value of all ' + rank + 's by 2',
         rarity: 'rare',
         icon: '\uD83D\uDC8E',
         targetRank: rank,
       });
-    })(RANKS[ri]);
+    }
+    return catalog;
   }
 
-  // Epic
-  UPGRADE_CATALOG.push(
-    { key: 'autoWinWar',  name: 'Auto-Win War',  desc: 'Automatically win the next war',             rarity: 'epic',   icon: '\uD83D\uDC51' },
-    { key: 'moreChoices', name: 'More Choices',   desc: 'Permanently get +1 upgrade choice',         rarity: 'epic',   icon: '\uD83C\uDFB0' },
-    { key: 'lossXpUp',    name: 'Consolation XP', desc: 'Gain 10% of base XP when losing a battle', rarity: 'epic',   icon: '\uD83D\uDEE1' }
-  );
+  // Keep a mutable reference for backwards compat (updated on setup)
+  var UPGRADE_CATALOG = buildUpgradeCatalog(DECKS.standard);
 
   // ===== HEADLESS SIMULATION =====
 
@@ -145,15 +186,6 @@
     return winnerCards.concat(loserCards);
   }
 
-  /**
-   * Play a complete War game headlessly and return rich statistics.
-   *
-   * Options:
-   *   p1Hand, p2Hand — custom starting hands (arrays of integers 2–14)
-   *   shufflePot     — shuffle won cards before adding to deck (default true)
-   *   maxTurns       — turn cap (default 10000)
-   *   upgrade        — { trigger(ctx) → {p1Upgrade, p2Upgrade}, effect(level) → bonus }
-   */
   function playWarGame(options) {
     options = options || {};
     var p1Hand, p2Hand;
@@ -179,35 +211,25 @@
 
     while (p1Hand.length > 0 && p2Hand.length > 0 && turns < maxTurns) {
       turns++;
-
       var p1Card = p1Hand.shift();
       var p2Card = p2Hand.shift();
       var pot = [{ card: p1Card, owner: 1 }, { card: p2Card, owner: 2 }];
-
       var result = p1Card > p2Card ? 1 : p2Card > p1Card ? 2 : 0;
       var warCount = 0;
 
       while (result === 0) {
-        wars++;
-        warCount++;
+        wars++; warCount++;
         if (warCount === 2) doubleWars++;
         if (warCount === 3) tripleWars++;
-
-        // Check if both players can afford war (need 4 cards: 3 face-down + 1 reveal)
         if (p1Hand.length < 4 || p2Hand.length < 4) {
           warEndedGame = true;
           var loser, winner;
-          if (p1Hand.length <= p2Hand.length) {
-            loser = p1Hand; winner = p2Hand; result = 2;
-          } else {
-            loser = p2Hand; winner = p1Hand; result = 1;
-          }
+          if (p1Hand.length <= p2Hand.length) { loser = p1Hand; winner = p2Hand; result = 2; }
+          else { loser = p2Hand; winner = p1Hand; result = 1; }
           for (var i = 0; i < pot.length; i++) winner.push(pot[i].card);
           while (loser.length > 0) winner.push(loser.shift());
           break;
         }
-
-        // Deal 3 face-down + 1 reveal per side
         for (var i = 0; i < 3; i++) {
           pot.push({ card: p1Hand.shift(), owner: 1 });
           pot.push({ card: p2Hand.shift(), owner: 2 });
@@ -216,11 +238,9 @@
         var p2Reveal = p2Hand.shift();
         pot.push({ card: p1Reveal, owner: 1 });
         pot.push({ card: p2Reveal, owner: 2 });
-
         result = p1Reveal > p2Reveal ? 1 : p2Reveal > p1Reveal ? 2 : 0;
       }
 
-      // Collect pot to winner (unless war ended the game — cards already moved)
       if (!warEndedGame) {
         var won = collectPot(pot, result, shufflePot);
         if (result === 1) {
@@ -236,49 +256,35 @@
         }
       }
 
-      // Lead tracking
       var diff = p1Hand.length - p2Hand.length;
       if (diff > p1MaxLead) p1MaxLead = diff;
       if (-diff > p2MaxLead) p2MaxLead = -diff;
       var leader = diff > 0 ? 1 : diff < 0 ? 2 : 0;
       if (leader !== 0 && lastLeader !== 0 && leader !== lastLeader) leadChanges++;
       if (leader !== 0) lastLeader = leader;
-
     }
 
     return {
       winner: p1Hand.length > p2Hand.length ? 1 : 2,
-      turns: turns,
-      wars: wars,
-      doubleWars: doubleWars,
-      tripleWars: tripleWars,
-      p1Remaining: p1Hand.length,
-      p2Remaining: p2Hand.length,
-      p1HandWins: p1HandWins,
-      p2HandWins: p2HandWins,
-      warEndedGame: warEndedGame,
-      capped: turns >= maxTurns,
-      p1MaxStreak: p1MaxStreak,
-      p2MaxStreak: p2MaxStreak,
-      p1MaxLead: p1MaxLead,
-      p2MaxLead: p2MaxLead,
-      leadChanges: leadChanges,
+      turns: turns, wars: wars, doubleWars: doubleWars, tripleWars: tripleWars,
+      p1Remaining: p1Hand.length, p2Remaining: p2Hand.length,
+      p1HandWins: p1HandWins, p2HandWins: p2HandWins,
+      warEndedGame: warEndedGame, capped: turns >= maxTurns,
+      p1MaxStreak: p1MaxStreak, p2MaxStreak: p2MaxStreak,
+      p1MaxLead: p1MaxLead, p2MaxLead: p2MaxLead, leadChanges: leadChanges,
     };
   }
 
   // ===== INTERACTIVE GAME ENGINE =====
 
-  /**
-   * Step-by-step game engine for UI-driven play.
-   * Cards are objects { suit, rank, value }.
-   * The UI calls methods in sequence and handles rendering/animation.
-   */
   function WarGameEngine() {
     this.p1Hand = [];
     this.p2Hand = [];
     this.pot = [];
+    this.activeDeckId = 'standard';
+    this.activeDeck = DECKS.standard;
+    this.upgradeCatalog = UPGRADE_CATALOG;
 
-    // XP system
     this.xp = 0;
     this.xpPerWin = 20;
     this.xpToLevel = 100;
@@ -286,7 +292,6 @@
     this.comboXpPercent = 10;
     this.combo = 0;
 
-    // Upgrade system
     this.numUpgradeChoices = 3;
     this.nextCardBoost = 0;
     this.autoWinWar = false;
@@ -296,12 +301,25 @@
     this.stats = { rounds: 0, wins: 0, losses: 0, wars: 0, maxCombo: 0, upgradesPicked: 0, cardsStolen: 0 };
   }
 
-  WarGameEngine.prototype.setup = function () {
-    var deck = createFullDeck();
+  WarGameEngine.prototype.setup = function (deckId) {
+    deckId = deckId || this.activeDeckId || 'standard';
+    this.activeDeckId = deckId;
+    this.activeDeck = DECKS[deckId] || DECKS.standard;
+
+    // Build deck and upgrade catalog for this deck
+    var deck = createDeckCards(this.activeDeck);
     shuffle(deck);
-    this.p1Hand = deck.slice(0, 26);
-    this.p2Hand = deck.slice(26);
+    var half = Math.floor(deck.length / 2);
+    this.p1Hand = deck.slice(0, half);
+    this.p2Hand = deck.slice(half);
     this.pot = [];
+
+    this.upgradeCatalog = buildUpgradeCatalog(this.activeDeck);
+    // Also update the global reference
+    UPGRADE_CATALOG = this.upgradeCatalog;
+
+    // Scale XP threshold by deck size (52 cards = 100 XP)
+    this.xpToLevel = Math.max(30, Math.round(100 * (deck.length / 52)));
 
     this.xp = 0;
     this.xpPerWin = 20;
@@ -321,12 +339,8 @@
   WarGameEngine.prototype.getP1Count = function () { return this.p1Hand.length; };
   WarGameEngine.prototype.getP2Count = function () { return this.p2Hand.length; };
 
-  /** Reset pot for a new turn. */
-  WarGameEngine.prototype.beginTurn = function () {
-    this.pot = [];
-  };
+  WarGameEngine.prototype.beginTurn = function () { this.pot = []; };
 
-  /** Draw from player's (P1) deck, add to pot. Returns card object or null. */
   WarGameEngine.prototype.drawPlayer = function () {
     if (this.p1Hand.length === 0) return null;
     var card = this.p1Hand.shift();
@@ -334,7 +348,6 @@
     return card;
   };
 
-  /** Draw from opponent's (P2) deck, add to pot. Returns card object or null. */
   WarGameEngine.prototype.drawOpponent = function () {
     if (this.p2Hand.length === 0) return null;
     var card = this.p2Hand.shift();
@@ -342,126 +355,61 @@
     return card;
   };
 
-  // --- XP helpers ---
-
-  /** Calculate XP for a win. isWar = true applies critical multiplier. */
   WarGameEngine.prototype.calcXP = function (isWar) {
     var base = this.xpPerWin;
     var comboMultiplier = 1 + (this.combo * this.comboXpPercent / 100);
     var xp = base * comboMultiplier;
-    if (isWar) {
-      xp = xp * (this.criticalXpPercent / 100);
-    }
+    if (isWar) xp = xp * (this.criticalXpPercent / 100);
     return Math.floor(xp);
   };
 
-  /**
-   * Compare two cards with temporary boost applied.
-   * Returns { winner: 'player'|'opponent'|'tie', playerEffective, opponentEffective, boosted }
-   */
   WarGameEngine.prototype.evaluate = function (playerCard, opponentCard) {
-    // Player gets permanent rank boosts; opponent always uses base value
     var pv = playerCard.baseValue + (this.rankBoosts[playerCard.rank] || 0);
     var ov = opponentCard.baseValue;
     var boosted = false;
-
     if (this.nextCardBoost > 0) {
       pv += this.nextCardBoost;
       this.nextCardBoost = 0;
       boosted = true;
     }
-
     var winner;
-    if (pv > ov) {
-      winner = 'player';
-    } else if (ov > pv) {
-      winner = 'opponent';
-    } else {
-      winner = 'tie';
-    }
-
+    if (pv > ov) winner = 'player';
+    else if (ov > pv) winner = 'opponent';
+    else winner = 'tie';
     return { winner: winner, playerEffective: pv, opponentEffective: ov, boosted: boosted };
   };
 
-  /** Can both sides afford a war? (need 4 cards each: 3 face-down + 1 reveal) */
   WarGameEngine.prototype.canAffordWar = function () {
     return this.p1Hand.length >= 4 && this.p2Hand.length >= 4;
   };
 
-  /** Determine who loses when war can't be afforded. Returns 'player' or 'opponent'. */
   WarGameEngine.prototype.warLoser = function () {
-    if (this.p1Hand.length < 4 && this.p2Hand.length < 4) {
+    if (this.p1Hand.length < 4 && this.p2Hand.length < 4)
       return this.p1Hand.length <= this.p2Hand.length ? 'player' : 'opponent';
-    }
     if (this.p1Hand.length < 4) return 'player';
     if (this.p2Hand.length < 4) return 'opponent';
     return null;
   };
 
-  /**
-   * Deal war cards: 3 face-down + 1 reveal per side. Adds all to pot.
-   * Returns { p1FaceDown: card[], p2FaceDown: card[], p1Reveal: card, p2Reveal: card }
-   */
-  WarGameEngine.prototype.dealWarCards = function () {
-    var p1FaceDown = [];
-    var p2FaceDown = [];
-
-    for (var i = 0; i < 3; i++) {
-      var c1 = this.p1Hand.shift();
-      this.pot.push({ card: c1, owner: 'player' });
-      p1FaceDown.push(c1);
-
-      var c2 = this.p2Hand.shift();
-      this.pot.push({ card: c2, owner: 'opponent' });
-      p2FaceDown.push(c2);
-    }
-
-    var p1Reveal = this.p1Hand.shift();
-    this.pot.push({ card: p1Reveal, owner: 'player' });
-
-    var p2Reveal = this.p2Hand.shift();
-    this.pot.push({ card: p2Reveal, owner: 'opponent' });
-
-    return { p1FaceDown: p1FaceDown, p2FaceDown: p2FaceDown, p1Reveal: p1Reveal, p2Reveal: p2Reveal };
-  };
-
-  /**
-   * Force war loss: all pot + loser's hand go to the winner.
-   * Returns the winner ('player' or 'opponent').
-   */
   WarGameEngine.prototype.forceWarLoss = function () {
     var loserSide = this.warLoser();
-    var loserHand, winnerHand;
-
-    if (loserSide === 'player') {
-      loserHand = this.p1Hand;
-      winnerHand = this.p2Hand;
-    } else {
-      loserHand = this.p2Hand;
-      winnerHand = this.p1Hand;
-    }
-
+    var loserHand = loserSide === 'player' ? this.p1Hand : this.p2Hand;
+    var winnerHand = loserSide === 'player' ? this.p2Hand : this.p1Hand;
     for (var i = 0; i < this.pot.length; i++) winnerHand.push(this.pot[i].card);
     while (loserHand.length > 0) winnerHand.push(loserHand.shift());
     this.pot = [];
-
     return loserSide === 'player' ? 'opponent' : 'player';
   };
 
-  /** Move all pot cards to the winner's deck (shuffled to prevent patterns). */
   WarGameEngine.prototype.collectToWinner = function (winner) {
     var cards = [];
     for (var i = 0; i < this.pot.length; i++) cards.push(this.pot[i].card);
     shuffle(cards);
-
     var dest = winner === 'player' ? this.p1Hand : this.p2Hand;
     for (var i = 0; i < cards.length; i++) dest.push(cards[i]);
     this.pot = [];
   };
 
-  // --- XP & Upgrade management ---
-
-  /** Add XP. Returns true if leveled up (overflow carries into next level). */
   WarGameEngine.prototype.addXP = function (amount) {
     this.xp += amount;
     if (this.xp >= this.xpToLevel) {
@@ -475,22 +423,21 @@
     return { current: this.xp, needed: this.xpToLevel, percentage: (this.xp / this.xpToLevel) * 100 };
   };
 
-  /** Get upgrade choices, each independently rolling for rarity. */
   WarGameEngine.prototype.getUpgradeChoices = function () {
     var n = this.numUpgradeChoices;
+    var catalog = this.upgradeCatalog;
     var choices = [];
     var usedKeys = {};
 
     for (var i = 0; i < n; i++) {
       var rarity = rollRarity();
       var pool = [];
-      for (var j = 0; j < UPGRADE_CATALOG.length; j++) {
-        if (UPGRADE_CATALOG[j].rarity === rarity && !usedKeys[UPGRADE_CATALOG[j].key]) pool.push(UPGRADE_CATALOG[j]);
+      for (var j = 0; j < catalog.length; j++) {
+        if (catalog[j].rarity === rarity && !usedKeys[catalog[j].key]) pool.push(catalog[j]);
       }
-      // Fallback to any rarity if pool is empty
       if (pool.length === 0) {
-        for (var j = 0; j < UPGRADE_CATALOG.length; j++) {
-          if (!usedKeys[UPGRADE_CATALOG[j].key]) pool.push(UPGRADE_CATALOG[j]);
+        for (var j = 0; j < catalog.length; j++) {
+          if (!usedKeys[catalog[j].key]) pool.push(catalog[j]);
         }
       }
       if (pool.length === 0) break;
@@ -501,32 +448,21 @@
     return choices;
   };
 
-  /**
-   * Activate an upgrade by key. Returns result info for UI feedback.
-   * Immediate effects are applied now; temp effects set flags for next round.
-   */
   WarGameEngine.prototype.activateUpgrade = function (key) {
+    var catalog = this.upgradeCatalog;
     var def = null;
-    for (var i = 0; i < UPGRADE_CATALOG.length; i++) {
-      if (UPGRADE_CATALOG[i].key === key) { def = UPGRADE_CATALOG[i]; break; }
+    for (var i = 0; i < catalog.length; i++) {
+      if (catalog[i].key === key) { def = catalog[i]; break; }
     }
     if (!def) return null;
 
     var result = { key: key, name: def.name, rarity: def.rarity, icon: def.icon };
 
     switch (key) {
-      case 'boost3':
-        this.nextCardBoost += 3;
-        break;
-      case 'boost5':
-        this.nextCardBoost += 5;
-        break;
-      case 'boost7':
-        this.nextCardBoost += 7;
-        break;
-      case 'boost10':
-        this.nextCardBoost += 10;
-        break;
+      case 'boost3':  this.nextCardBoost += 3;  break;
+      case 'boost5':  this.nextCardBoost += 5;  break;
+      case 'boost7':  this.nextCardBoost += 7;  break;
+      case 'boost10': this.nextCardBoost += 10; break;
       case 'xpUp':
         this.xpPerWin += 5;
         result.detail = 'XP per win: ' + this.xpPerWin;
@@ -548,9 +484,7 @@
         this.criticalXpPercent += 25;
         result.detail = 'War XP: ' + this.criticalXpPercent + '%';
         break;
-      case 'autoWinWar':
-        this.autoWinWar = true;
-        break;
+      case 'autoWinWar': this.autoWinWar = true; break;
       case 'moreChoices':
         this.numUpgradeChoices += 1;
         result.detail = 'Choices: ' + this.numUpgradeChoices;
@@ -560,7 +494,6 @@
         result.detail = 'Loss XP: ' + this.lossXpPercent + '%';
         break;
       default:
-        // Handle per-rank permanent boosts via rankBoosts map
         if (key.indexOf('permBoost2_') === 0) {
           var targetRank = key.substring('permBoost2_'.length);
           if (!this.rankBoosts[targetRank]) this.rankBoosts[targetRank] = 0;
@@ -575,7 +508,6 @@
         break;
     }
 
-    // Track upgrade history
     if (!this.upgradeHistory[key]) this.upgradeHistory[key] = 0;
     this.upgradeHistory[key]++;
     this.stats.upgradesPicked++;
@@ -584,7 +516,6 @@
     return result;
   };
 
-  /** Check game over. Returns { over, winner } where winner is 'player' or 'opponent' or null. */
   WarGameEngine.prototype.isGameOver = function () {
     if (this.p1Hand.length === 0) return { over: true, winner: 'opponent' };
     if (this.p2Hand.length === 0) return { over: true, winner: 'player' };
@@ -594,18 +525,21 @@
   // ===== EXPORTS =====
 
   exports.SUITS = SUITS;
-  exports.RANKS = RANKS;
-  exports.RANK_VALUES = RANK_VALUES;
   exports.SUIT_SYMBOLS = SUIT_SYMBOLS;
+  exports.DECKS = DECKS;
   exports.createDeck = createDeck;
   exports.createFullDeck = createFullDeck;
+  exports.createDeckCards = createDeckCards;
+  exports.buildUpgradeCatalog = buildUpgradeCatalog;
   exports.shuffle = shuffle;
   exports.cardValue = cardValue;
   exports.percentile = percentile;
   exports.stddev = stddev;
   exports.RARITY_WEIGHTS = RARITY_WEIGHTS;
   exports.rollRarity = rollRarity;
-  exports.UPGRADE_CATALOG = UPGRADE_CATALOG;
+  // UPGRADE_CATALOG is dynamic now but keep the export for compat
+  Object.defineProperty(exports, 'UPGRADE_CATALOG', { get: function () { return UPGRADE_CATALOG; } });
+  exports.BASE_UPGRADES = BASE_UPGRADES;
   exports.playWarGame = playWarGame;
   exports.WarGameEngine = WarGameEngine;
 
