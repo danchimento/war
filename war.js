@@ -492,17 +492,14 @@ GameUI.prototype.playInitialCards = async function () {
 
   this.syncDecks();
 
-  // Show permanent boost badge using rankBoosts map
-  var playerBoost = this.engine.rankBoosts[pCard.rank] || 0;
-  if (playerBoost > 0) updateBoostBadge(pEl, playerBoost);
-  await Anim.delay(0.15);
-
   var result = this.engine.evaluate(pCard, oCard);
 
-  if (result.boosted) {
-    updateBoostBadge(pEl, (playerBoost) + (result.playerEffective - pCard.baseValue - playerBoost));
-    await Anim.delay(0.15);
-  }
+  // Apply boost badge before card is visible so it's already there on flip
+  var playerBoost = this.engine.rankBoosts[pCard.rank] || 0;
+  var totalBoost = result.boosted
+    ? (playerBoost) + (result.playerEffective - pCard.baseValue - playerBoost)
+    : playerBoost;
+  if (totalBoost > 0) updateBoostBadge(pEl, totalBoost);
 
   this.lastCompareEls = { player: pEl, opponent: oEl };
 
@@ -566,17 +563,15 @@ GameUI.prototype.checkWarComplete = async function () {
   var pEl = ws.playerEls[3], oEl = ws.opponentEls[3];
   var pCard = ws.playerCards[3], oCard = ws.opponentCards[3];
 
-  await Promise.all([Anim.flipUp(pEl), Anim.flipUp(oEl)]);
-
-  var playerBoost = this.engine.rankBoosts[pCard.rank] || 0;
-  if (playerBoost > 0) updateBoostBadge(pEl, playerBoost);
-  await Anim.delay(0.15);
-
+  // Evaluate and apply boost badge before flip so it's visible immediately
   var result = this.engine.evaluate(pCard, oCard);
-  if (result.boosted) {
-    updateBoostBadge(pEl, result.playerEffective - pCard.baseValue);
-    await Anim.delay(0.15);
-  }
+  var playerBoost = this.engine.rankBoosts[pCard.rank] || 0;
+  var totalBoost = result.boosted
+    ? result.playerEffective - pCard.baseValue
+    : playerBoost;
+  if (totalBoost > 0) updateBoostBadge(pEl, totalBoost);
+
+  await Promise.all([Anim.flipUp(pEl), Anim.flipUp(oEl)]);
 
   this.lastCompareEls = { player: pEl, opponent: oEl };
 
