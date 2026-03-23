@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0a0a1a">
   <title>War</title>
-  <link rel="stylesheet" href="war.css?v=14">
+  <link rel="stylesheet" href="war.css?v=15">
 </head>
 <body>
   <!-- EVAL BAR (card advantage indicator) -->
@@ -16,9 +16,13 @@
   </div>
 
   <!-- XP BAR (vertical, right side) -->
-  <div id="xp-bar-container" class="xp-bar-container">
-    <div id="xp-bar-fill" class="xp-bar-fill"></div>
-    <span id="xp-bar-label" class="xp-bar-label">XP</span>
+  <div class="xp-bar-wrapper">
+    <div class="xp-bar-title">XP</div>
+    <div id="xp-bar-container" class="xp-bar-container">
+      <div id="xp-bar-fill" class="xp-bar-fill"></div>
+      <span id="xp-bar-label" class="xp-bar-label"></span>
+    </div>
+    <div id="combo-display" class="combo-display hidden"></div>
   </div>
 
   <div id="game" class="game">
@@ -35,7 +39,6 @@
 
     <!-- BATTLE ZONE -->
     <div id="battle-zone" class="battle-zone">
-      <div id="combo-display" class="combo-display hidden"></div>
       <div id="opponent-cards" class="card-row"></div>
       <div id="result-flash" class="result-flash"></div>
       <div id="player-cards" class="card-row"></div>
@@ -88,7 +91,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12/dist/gsap.min.js"></script>
-  <script src="war-simulation.js?v=14"></script>
-  <script src="war.js?v=14"></script>
+  <script src="war-simulation.js?v=15"></script>
+  <script src="war.js?v=15"></script>
 </body>
 </html>

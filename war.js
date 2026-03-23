@@ -378,25 +378,31 @@ GameUI.prototype.renderStatus = function () {
 GameUI.prototype.updateCombo = function () {
   var combo = this.engine.combo;
   var el = this.els.comboDisplay;
+  var xpContainer = this.els.xpContainer;
 
   // Combo break animation
   if (this.prevCombo >= 2 && combo === 0) {
+    xpContainer.classList.remove('combo-active');
     gsap.to(el, {
-      scale: 0.3, opacity: 0, x: '+=10', rotation: 15,
+      scale: 0.3, opacity: 0,
       duration: 0.4, ease: 'power2.in',
-      onComplete: function () { el.classList.add('hidden'); gsap.set(el, { scale: 1, opacity: 1, x: 0, rotation: 0 }); }
+      onComplete: function () { el.classList.add('hidden'); gsap.set(el, { scale: 1, opacity: 1 }); }
     });
     this.prevCombo = combo;
     return;
   }
 
   if (combo >= 2) {
-    el.textContent = 'x' + combo + ' COMBO';
+    el.textContent = 'x' + combo;
     el.classList.remove('hidden');
-    gsap.fromTo(el, { scale: 2, opacity: 0.5 }, { scale: 1, opacity: 1, duration: 0.4, ease: 'elastic.out(1, 0.5)' });
+    xpContainer.classList.add('combo-active');
+    gsap.fromTo(el, { scale: 1.8, opacity: 0.5 }, { scale: 1, opacity: 1, duration: 0.3, ease: 'back.out(2)' });
+    // Flash "COMBO" on screen
+    Anim.resultFlash('x' + combo + ' COMBO', '#f39c12');
     this.comboRing();
   } else {
     el.classList.add('hidden');
+    xpContainer.classList.remove('combo-active');
   }
   this.prevCombo = combo;
 };

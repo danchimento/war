@@ -256,29 +256,54 @@ html, body {
 }
 
 /* ========== XP BAR (vertical, right side) ========== */
-.xp-bar-container {
+.xp-bar-wrapper {
   position: fixed;
   right: 6px;
   top: 50%;
   transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  z-index: 20;
+}
+
+.xp-bar-title {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  opacity: 0.5;
+}
+
+.xp-bar-container {
   width: 16px;
-  height: 60%;
-  max-height: 400px;
+  height: 55vh;
+  max-height: 360px;
   background: rgba(255,255,255,.08);
   border-radius: 8px;
   overflow: hidden;
-  z-index: 20;
   border: 1px solid rgba(255,255,255,.08);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  position: relative;
+  transition: border-color 0.3s;
+}
+
+.xp-bar-container.combo-active {
+  border-color: rgba(243,156,18,.5);
+  box-shadow: 0 0 10px rgba(243,156,18,.2);
 }
 
 .xp-bar-fill {
   width: 100%;
   height: 0%;
   background: linear-gradient(0deg, #f39c12, var(--xp-color));
-  transition: height 0.5s ease;
+  transition: height 0.5s ease, background 0.3s;
+}
+
+.xp-bar-container.combo-active .xp-bar-fill {
+  background: linear-gradient(0deg, #e67e22, #f39c12);
 }
 
 .xp-bar-label {
@@ -333,16 +358,12 @@ html, body {
 
 /* ========== COMBO DISPLAY ========== */
 .combo-display {
-  position: absolute;
-  bottom: 4px;
-  right: 8px;
-  font-size: 22px;
+  font-size: 14px;
   font-weight: 900;
   color: #f39c12;
-  letter-spacing: 1px;
-  text-shadow: 0 2px 8px rgba(243,156,18,.5), 0 0 20px rgba(243,156,18,.3);
-  z-index: 8;
+  text-shadow: 0 1px 6px rgba(243,156,18,.5);
   pointer-events: none;
+  white-space: nowrap;
 }
 
 /* ========== OVERLAYS ========== */
