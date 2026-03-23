@@ -167,34 +167,28 @@ var Anim = {
   },
 
   cardClash: function (winnerEl, loserEl, winnerSide) {
-    var winColor = winnerSide === 'player' ? '#2ecc71' : '#e74c3c';
-    var winFront = winnerEl.querySelector('.card-front');
     var battleZone = document.getElementById('battle-zone');
     var tl = gsap.timeline();
 
-    // Create slash element across the battle zone
+    // Create slash on the losing card (stays there)
     var slash = document.createElement('div');
     slash.className = 'battle-slash';
-    battleZone.appendChild(slash);
+    loserEl.appendChild(slash);
 
     // Winner card on top
     tl.set(winnerEl, { zIndex: 20 })
-    // 1. Slash flashes across
+    // 1. Slash flashes across the loser
     .fromTo(slash, { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: 0.08, ease: 'power4.out' })
-    // 2. Screen shake on battle zone
+    // 2. Screen shake
     .to(battleZone, { x: -4, duration: 0.04, ease: 'none' })
     .to(battleZone, { x: 5, duration: 0.04, ease: 'none' })
     .to(battleZone, { x: -3, duration: 0.04, ease: 'none' })
     .to(battleZone, { x: 0, duration: 0.04, ease: 'none' })
-    // 3. Slash fades out
-    .to(slash, { opacity: 0, duration: 0.15 }, '-=0.1')
-    // 4. Winner grows + glows, loser shrinks + dims
+    // 3. Winner grows, loser shrinks + dims (slash stays)
     .to(winnerEl, { scale: 1.12, duration: 0.15, ease: 'power2.out' }, '-=0.1')
-    .to(winFront, { boxShadow: '0 0 18px 5px ' + winColor, duration: 0.15 }, '<')
     .to(loserEl, { scale: 0.88, opacity: 0.45, duration: 0.15, ease: 'power2.out' }, '<')
-    // 5. Brief hold, then cleanup
-    .to({}, { duration: 0.15 })
-    .call(function () { if (slash.parentNode) slash.remove(); });
+    // 4. Brief hold
+    .to({}, { duration: 0.15 });
     return tl;
   },
 
