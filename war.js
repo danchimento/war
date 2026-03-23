@@ -33,34 +33,34 @@ function createCardElement(card, deckDef) {
     centerText = deckDef.rankSymbols[card.rank];
   }
 
-  // Top row: name (left) + value (right)
+  // Top row: value (left) + name (right)
   var topRow = document.createElement('div');
   topRow.className = 'card-corner card-corner--top';
-  var nameTop = document.createElement('span');
-  nameTop.className = 'card-name';
-  nameTop.textContent = card.rank;
   var valTop = document.createElement('span');
   valTop.className = 'card-val';
   valTop.textContent = card.baseValue;
-  topRow.appendChild(nameTop);
+  var nameTop = document.createElement('span');
+  nameTop.className = 'card-name';
+  nameTop.textContent = card.rank;
   topRow.appendChild(valTop);
+  topRow.appendChild(nameTop);
 
   // Center
   var suitCenter = document.createElement('span');
   suitCenter.className = 'suit';
   suitCenter.textContent = centerText;
 
-  // Bottom row (rotated 180): name (left) + value (right)
+  // Bottom row (rotated 180): value (left) + name (right)
   var botRow = document.createElement('div');
   botRow.className = 'card-corner card-corner--bot';
-  var nameBot = document.createElement('span');
-  nameBot.className = 'card-name';
-  nameBot.textContent = card.rank;
   var valBot = document.createElement('span');
   valBot.className = 'card-val';
   valBot.textContent = card.baseValue;
-  botRow.appendChild(nameBot);
+  var nameBot = document.createElement('span');
+  nameBot.className = 'card-name';
+  nameBot.textContent = card.rank;
   botRow.appendChild(valBot);
+  botRow.appendChild(nameBot);
 
   front.appendChild(topRow);
   front.appendChild(suitCenter);
