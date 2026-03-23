@@ -169,22 +169,32 @@ var Anim = {
   cardClash: function (winnerEl, loserEl, winnerSide) {
     var winColor = winnerSide === 'player' ? '#2ecc71' : '#e74c3c';
     var winFront = winnerEl.querySelector('.card-front');
+    var battleZone = document.getElementById('battle-zone');
     var tl = gsap.timeline();
+
+    // Create slash element across the battle zone
+    var slash = document.createElement('div');
+    slash.className = 'battle-slash';
+    battleZone.appendChild(slash);
 
     // Winner card on top
     tl.set(winnerEl, { zIndex: 20 })
-    // 1. Vibrate
-    .to([winnerEl, loserEl], { x: '+=3', duration: 0.03, ease: 'none', yoyo: true, repeat: 5 })
-    // 2. Smash toward each other
-    .to(winnerEl, { y: winnerSide === 'player' ? -12 : 12, duration: 0.12, ease: 'power2.in' }, '+=0.02')
-    .to(loserEl, { y: winnerSide === 'player' ? 12 : -12, duration: 0.12, ease: 'power2.in' }, '<')
-    // 3. Winner grows + glows
-    .to(winnerEl, { scale: 1.15, duration: 0.2, ease: 'back.out(2)' })
-    .to(winFront, { boxShadow: '0 0 20px 6px ' + winColor, duration: 0.2 }, '<')
-    // 4. Loser shrinks + dims
-    .to(loserEl, { scale: 0.85, opacity: 0.5, duration: 0.2, ease: 'power2.out' }, '<')
-    // 5. Hold
-    .to({}, { duration: 0.25 });
+    // 1. Slash flashes across
+    .fromTo(slash, { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: 0.08, ease: 'power4.out' })
+    // 2. Screen shake on battle zone
+    .to(battleZone, { x: -4, duration: 0.04, ease: 'none' })
+    .to(battleZone, { x: 5, duration: 0.04, ease: 'none' })
+    .to(battleZone, { x: -3, duration: 0.04, ease: 'none' })
+    .to(battleZone, { x: 0, duration: 0.04, ease: 'none' })
+    // 3. Slash fades out
+    .to(slash, { opacity: 0, duration: 0.15 }, '-=0.1')
+    // 4. Winner grows + glows, loser shrinks + dims
+    .to(winnerEl, { scale: 1.12, duration: 0.15, ease: 'power2.out' }, '-=0.1')
+    .to(winFront, { boxShadow: '0 0 18px 5px ' + winColor, duration: 0.15 }, '<')
+    .to(loserEl, { scale: 0.88, opacity: 0.45, duration: 0.15, ease: 'power2.out' }, '<')
+    // 5. Brief hold, then cleanup
+    .to({}, { duration: 0.15 })
+    .call(function () { if (slash.parentNode) slash.remove(); });
     return tl;
   },
 
