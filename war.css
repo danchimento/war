@@ -535,8 +535,8 @@ html, body {
 .battle-slash {
   position: absolute;
   top: 50%;
-  left: -10%;
-  width: 120%;
+  left: -20%;
+  width: 140%;
   height: 3px;
   background: linear-gradient(90deg, transparent 0%, rgba(231,76,60,.9) 20%, #fff 50%, rgba(231,76,60,.9) 80%, transparent 100%);
   transform: translateY(-50%) rotate(-25deg);
