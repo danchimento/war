@@ -200,34 +200,52 @@ html, body {
   border-radius: var(--card-radius);
   display: flex;
   flex-direction: column;
-  padding: 6px;
+  padding: 4px 5px;
   position: absolute;
   top: 0;
   left: 0;
+  overflow: hidden;
 }
 
-.card-front .rank {
-  font-size: 18px;
-  font-weight: 700;
+/* Corner rows: name on one side, value on the other */
+.card-corner {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
   line-height: 1;
+  gap: 2px;
+}
+.card-corner--bot {
+  transform: rotate(180deg);
+}
+.card-name {
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.card-val {
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.card-mod {
+  color: var(--boost-badge);
+  font-size: 9px;
+  font-weight: 800;
 }
 
 .card-front .suit {
-  font-size: 32px;
+  font-size: 28px;
   text-align: center;
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
-}
-
-.card-front .rank-bottom {
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
-  text-align: right;
-  transform: rotate(180deg);
 }
 
 .card[data-suit="hearts"] .card-front,

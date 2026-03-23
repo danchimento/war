@@ -27,33 +27,44 @@ function createCardElement(card, deckDef) {
   front.className = 'card-front';
   front.style.display = 'none';
 
-  // Determine display text and center symbol from deck definition
-  var rankText = card.rank;
+  // Center symbol: piece symbol for chess, suit symbol for standard
   var centerText = WS.SUIT_SYMBOLS[card.suit] || '';
-  if (deckDef) {
-    if (deckDef.rankDisplay && deckDef.rankDisplay[card.rank]) {
-      rankText = deckDef.rankDisplay[card.rank];
-    }
-    if (deckDef.centerSymbol === 'rank' && deckDef.rankSymbols && deckDef.rankSymbols[card.rank]) {
-      centerText = deckDef.rankSymbols[card.rank];
-    }
+  if (deckDef && deckDef.centerSymbol === 'rank' && deckDef.rankSymbols && deckDef.rankSymbols[card.rank]) {
+    centerText = deckDef.rankSymbols[card.rank];
   }
 
-  var rankTop = document.createElement('span');
-  rankTop.className = 'rank';
-  rankTop.textContent = rankText;
+  // Top row: name (left) + value (right)
+  var topRow = document.createElement('div');
+  topRow.className = 'card-corner card-corner--top';
+  var nameTop = document.createElement('span');
+  nameTop.className = 'card-name';
+  nameTop.textContent = card.rank;
+  var valTop = document.createElement('span');
+  valTop.className = 'card-val';
+  valTop.textContent = card.baseValue;
+  topRow.appendChild(nameTop);
+  topRow.appendChild(valTop);
 
+  // Center
   var suitCenter = document.createElement('span');
   suitCenter.className = 'suit';
   suitCenter.textContent = centerText;
 
-  var rankBottom = document.createElement('span');
-  rankBottom.className = 'rank-bottom';
-  rankBottom.textContent = rankText;
+  // Bottom row (rotated 180): name (left) + value (right)
+  var botRow = document.createElement('div');
+  botRow.className = 'card-corner card-corner--bot';
+  var nameBot = document.createElement('span');
+  nameBot.className = 'card-name';
+  nameBot.textContent = card.rank;
+  var valBot = document.createElement('span');
+  valBot.className = 'card-val';
+  valBot.textContent = card.baseValue;
+  botRow.appendChild(nameBot);
+  botRow.appendChild(valBot);
 
-  front.appendChild(rankTop);
+  front.appendChild(topRow);
   front.appendChild(suitCenter);
-  front.appendChild(rankBottom);
+  front.appendChild(botRow);
 
   var back = document.createElement('div');
   back.className = 'card-back';
@@ -63,15 +74,20 @@ function createCardElement(card, deckDef) {
   return div;
 }
 
+/** Update the value corners to show the modifier in parens, colored differently. */
 function updateBoostBadge(cardEl, totalBoost) {
-  if (totalBoost <= 0) return;
-  var existing = cardEl.querySelector('.card-boost-badge');
-  if (existing) existing.remove();
-  var badge = document.createElement('span');
-  badge.className = 'card-boost-badge';
-  badge.textContent = '+' + totalBoost;
-  cardEl.appendChild(badge);
-  gsap.from(badge, { scale: 0, duration: 0.3, ease: 'back.out(2)' });
+  // Update .card-val elements to include modifier
+  var vals = cardEl.querySelectorAll('.card-val');
+  if (!vals.length) return;
+
+  var baseVal = parseInt(cardEl.dataset.value, 10);
+  for (var i = 0; i < vals.length; i++) {
+    if (totalBoost > 0) {
+      vals[i].innerHTML = baseVal + '<span class="card-mod">(+' + totalBoost + ')</span>';
+    } else {
+      vals[i].textContent = baseVal;
+    }
+  }
 }
 
 function showCardFront(el) {
