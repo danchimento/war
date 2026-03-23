@@ -11,6 +11,54 @@
   --text: #eee;
   --font: system-ui, -apple-system, sans-serif;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Themed colors */
+  --card-back-bg: linear-gradient(135deg, #1a1a4e, #2c1654);
+  --card-back-pattern: rgba(255,255,255,.05);
+  --card-back-border: rgba(255,255,255,.15);
+  --card-front-bg: #fff;
+  --card-front-border: #ccc;
+  --overlay-bg: linear-gradient(135deg, #1a1a3a, #1e1e44);
+  --overlay-border: rgba(255,255,255,.1);
+  --win-color: #2ecc71;
+  --lose-color: #e74c3c;
+  --combo-color: #f39c12;
+  --combo-color-dark: #e67e22;
+  --slash-color: rgba(231,76,60,.9);
+  --slash-glow: rgba(231,76,60,.5);
+  --slash-core: #fff;
+  --eval-player: rgba(46,204,113,.4);
+  --eval-opponent: rgba(180,60,60,.35);
+  --boost-badge: #2ecc71;
+  --epic-color: #9b59b6;
+}
+
+/* ========== NOIR THEME ========== */
+[data-theme="noir"] {
+  --bg: #0a0a0a;
+  --text: #d0d0d0;
+  --accent: #888;
+  --red: #c0392b;
+  --dark-suit: #333;
+  --xp-color: #ccc;
+  --card-back-bg: linear-gradient(135deg, #1a1a1a, #222);
+  --card-back-pattern: rgba(255,255,255,.03);
+  --card-back-border: rgba(255,255,255,.1);
+  --card-front-bg: #f5f5f0;
+  --card-front-border: #999;
+  --overlay-bg: linear-gradient(135deg, #111, #1a1a1a);
+  --overlay-border: rgba(255,255,255,.06);
+  --win-color: #eee;
+  --lose-color: #555;
+  --combo-color: #ddd;
+  --combo-color-dark: #bbb;
+  --slash-color: rgba(255,255,255,.95);
+  --slash-glow: rgba(255,255,255,.3);
+  --slash-core: #fff;
+  --eval-player: rgba(220,220,220,.35);
+  --eval-opponent: rgba(80,80,80,.35);
+  --boost-badge: #eee;
+  --epic-color: #888;
 }
 
 /* ========== RESET & BASE ========== */
@@ -146,9 +194,9 @@ html, body {
 .card-front {
   width: 100%;
   height: 100%;
-  background: #fff;
+  background: var(--card-front-bg);
   color: var(--dark-suit);
-  border: 1px solid #ccc;
+  border: 1px solid var(--card-front-border);
   border-radius: var(--card-radius);
   display: flex;
   flex-direction: column;
@@ -192,10 +240,10 @@ html, body {
   height: 100%;
   border-radius: var(--card-radius);
   background:
-    repeating-linear-gradient(45deg, rgba(255,255,255,.05) 0 2px, transparent 2px 10px),
-    repeating-linear-gradient(-45deg, rgba(255,255,255,.05) 0 2px, transparent 2px 10px),
-    linear-gradient(135deg, #1a1a4e, #2c1654);
-  border: 2px solid rgba(255,255,255,.15);
+    repeating-linear-gradient(45deg, var(--card-back-pattern) 0 2px, transparent 2px 10px),
+    repeating-linear-gradient(-45deg, var(--card-back-pattern) 0 2px, transparent 2px 10px),
+    var(--card-back-bg);
+  border: 2px solid var(--card-back-border);
   position: absolute;
   top: 0;
   left: 0;
@@ -291,7 +339,7 @@ html, body {
 }
 
 .xp-bar-container.combo-active {
-  border-color: rgba(243,156,18,.5);
+  border-color: var(--combo-color);
   box-shadow: 0 0 10px rgba(243,156,18,.2);
 }
 
@@ -303,7 +351,7 @@ html, body {
 }
 
 .xp-bar-container.combo-active .xp-bar-fill {
-  background: linear-gradient(0deg, #e67e22, #f39c12);
+  background: linear-gradient(0deg, var(--combo-color-dark), var(--combo-color));
 }
 
 .xp-bar-label {
@@ -352,16 +400,16 @@ html, body {
 }
 
 .upgrade-badge--epic {
-  border-color: #9b59b6;
-  color: #bb8fce;
+  border-color: var(--epic-color);
+  color: var(--epic-color);
 }
 
 /* ========== COMBO DISPLAY ========== */
 .combo-display {
   font-size: 14px;
   font-weight: 900;
-  color: #f39c12;
-  text-shadow: 0 1px 6px rgba(243,156,18,.5);
+  color: var(--combo-color);
+  text-shadow: 0 1px 6px rgba(243,156,18,.4);
   pointer-events: none;
   white-space: nowrap;
 }
@@ -384,13 +432,13 @@ html, body {
 }
 
 .overlay-content {
-  background: linear-gradient(135deg, #1a1a3a, #1e1e44);
+  background: var(--overlay-bg);
   border-radius: 16px;
   padding: 32px 24px;
   text-align: center;
   max-width: 360px;
   width: 90%;
-  border: 1px solid rgba(255,255,255,.1);
+  border: 1px solid var(--overlay-border);
 }
 
 .overlay-content h2 {
@@ -514,7 +562,7 @@ html, body {
   width: 16px;
   height: 60%;
   max-height: 400px;
-  background: rgba(180,60,60,.35);
+  background: var(--eval-opponent);
   border-radius: 8px;
   overflow: hidden;
   z-index: 20;
@@ -527,7 +575,7 @@ html, body {
 .eval-bar-fill {
   width: 100%;
   height: 50%;
-  background: rgba(46,204,113,.4);
+  background: var(--eval-player);
   transition: height 0.5s ease;
 }
 
@@ -559,13 +607,13 @@ html, body {
   left: -20%;
   width: 140%;
   height: 3px;
-  background: linear-gradient(90deg, transparent 0%, rgba(231,76,60,.9) 20%, #fff 50%, rgba(231,76,60,.9) 80%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, var(--slash-color) 20%, var(--slash-core) 50%, var(--slash-color) 80%, transparent 100%);
   transform: translateY(-50%) rotate(-25deg);
   transform-origin: center center;
   z-index: 15;
   pointer-events: none;
   border-radius: 2px;
-  box-shadow: 0 0 12px 4px rgba(231,76,60,.5), 0 0 30px 2px rgba(255,255,255,.3);
+  box-shadow: 0 0 12px 4px var(--slash-glow), 0 0 30px 2px rgba(255,255,255,.3);
 }
 
 /* ========== CARD BOOST BADGE ========== */
@@ -573,7 +621,7 @@ html, body {
   position: absolute;
   top: -8px;
   right: -8px;
-  background: #2ecc71;
+  background: var(--boost-badge);
   color: #fff;
   font-size: 11px;
   font-weight: 800;
@@ -603,7 +651,7 @@ html, body {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 3px solid #f39c12;
+  border: 3px solid var(--combo-color);
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 7;
@@ -671,8 +719,40 @@ html, body {
 }
 
 .deck-row-boost--active {
-  color: #2ecc71;
+  color: var(--boost-badge);
 }
+
+/* ========== THEME SWITCHER ========== */
+.theme-switcher {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.theme-switcher-label {
+  font-size: 10px;
+  opacity: 0.4;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.theme-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.15);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.theme-btn:active { transform: scale(0.9); }
+.theme-btn.active { border-color: var(--text); }
+.theme-btn--default { background: linear-gradient(135deg, #1a1a4e, #2c1654); }
+.theme-btn--noir { background: linear-gradient(135deg, #111, #222); }
 
 /* ========== GAME OVER STATS ========== */
 .gameover-stats {

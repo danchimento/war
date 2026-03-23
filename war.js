@@ -167,27 +167,23 @@ var Anim = {
   },
 
   cardClash: function (winnerEl, loserEl, winnerSide) {
+    var style = getComputedStyle(document.documentElement);
+    var winColor = style.getPropertyValue('--win-color').trim();
     var battleZone = document.getElementById('battle-zone');
     var tl = gsap.timeline();
 
-    // Create slash on the losing card (stays there)
     var slash = document.createElement('div');
     slash.className = 'battle-slash';
     loserEl.appendChild(slash);
 
-    // Winner card on top
     tl.set(winnerEl, { zIndex: 20 })
-    // 1. Slash flashes across the loser
     .fromTo(slash, { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: 0.08, ease: 'power4.out' })
-    // 2. Screen shake
     .to(battleZone, { x: -4, duration: 0.04, ease: 'none' })
     .to(battleZone, { x: 5, duration: 0.04, ease: 'none' })
     .to(battleZone, { x: -3, duration: 0.04, ease: 'none' })
     .to(battleZone, { x: 0, duration: 0.04, ease: 'none' })
-    // 3. Winner grows, loser shrinks + dims (slash stays)
     .to(winnerEl, { scale: 1.12, duration: 0.15, ease: 'power2.out' }, '-=0.1')
     .to(loserEl, { scale: 0.88, opacity: 0.45, duration: 0.15, ease: 'power2.out' }, '<')
-    // 4. Brief hold
     .to({}, { duration: 0.15 });
     return tl;
   },
@@ -726,7 +722,7 @@ GameUI.prototype.showStolenCard = async function (card) {
 // --- Deck Viewer ---
 
 GameUI.prototype.showDeckViewer = function () {
-  var ranks = WS.RANKS.slice().reverse(); // A down to 2
+  var ranks = WS.RANKS.slice().reverse();
   var boosts = this.engine.rankBoosts;
   var list = this.els.deckList;
   list.innerHTML = '';
@@ -741,6 +737,32 @@ GameUI.prototype.showDeckViewer = function () {
       '<span class="deck-row-boost ' + boostClass + '">+' + boost + '</span>';
     list.appendChild(row);
   }
+
+  // Theme switcher
+  var currentTheme = document.documentElement.getAttribute('data-theme') || 'default';
+  var switcher = document.createElement('div');
+  switcher.className = 'theme-switcher';
+  switcher.innerHTML = '<span class="theme-switcher-label">Theme</span>';
+
+  var themes = [
+    { id: 'default', cls: 'theme-btn--default' },
+    { id: 'noir', cls: 'theme-btn--noir' },
+  ];
+  themes.forEach(function (t) {
+    var btn = document.createElement('button');
+    btn.className = 'theme-btn ' + t.cls + (currentTheme === t.id ? ' active' : '');
+    btn.addEventListener('click', function () {
+      if (t.id === 'default') document.documentElement.removeAttribute('data-theme');
+      else document.documentElement.setAttribute('data-theme', t.id);
+      try { localStorage.setItem('war-theme', t.id); } catch (e) {}
+      // Update active state
+      switcher.querySelectorAll('.theme-btn').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+    });
+    switcher.appendChild(btn);
+  });
+  list.appendChild(switcher);
+
   this.els.deckOverlay.classList.remove('hidden');
 };
 
@@ -785,5 +807,10 @@ GameUI.prototype.getAllVisibleCardEls = function () {
 // ===== BOOT =====
 
 document.addEventListener('DOMContentLoaded', function () {
+  // Restore saved theme
+  try {
+    var saved = localStorage.getItem('war-theme');
+    if (saved && saved !== 'default') document.documentElement.setAttribute('data-theme', saved);
+  } catch (e) {}
   window.game = new GameUI();
 });
